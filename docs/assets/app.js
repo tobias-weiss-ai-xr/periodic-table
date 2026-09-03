@@ -92,7 +92,10 @@ function buildNode(el) {
     text: `${el.s}'s room`, sub: 'ENTER →',
     color: catHex(el.cat), scale: 0.55, opacity: 0.85,
   });
-  portal.position.set(x, y + 2.35, WALL_Z + 5.2);
+  // pulled 25% toward the room's centre axis so right/left-edge elements'
+  // doors never end up underneath the detail panel overlay — still clearly
+  // floating above "their" element
+  portal.position.set(x * 0.75, y + 2.35, WALL_Z + 5.2);
   portal.visible = false;
   scene.add(portal);
 
@@ -576,6 +579,16 @@ window.RPRoom = {
   cameraIdle: () => !tween && !controls.locked,
   grid: () => ({ colW: COL_W, rowH: ROW_H }),
   portalVisible: () => elementNodeList.filter((n) => n.portal && n.portal.visible).length,
+  portalScreen: (n) => {
+    const node = elementNodes.get(n);
+    if (!node || !node.portal || !node.portal.visible) return null;
+    const v = node.portal.position.clone().project(camera);
+    if (v.z > 1) return null;
+    return {
+      x: Math.round((v.x * 0.5 + 0.5) * window.innerWidth),
+      y: Math.round((-v.y * 0.5 + 0.5) * window.innerHeight),
+    };
+  },
   roomHref: (n) => { const node = elementNodes.get(n); return node ? roomHref(node.el) : null; },
   selectByNumber(n) { const node = elementNodes.get(n); if (node) focusElement(node); return !!node; },
 };

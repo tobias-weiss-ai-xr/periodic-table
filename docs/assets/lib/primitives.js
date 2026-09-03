@@ -179,3 +179,32 @@ export function buildDoor(opts = {}) {
   g.userData.meshes = [ring, fill, glow, label];
   return g;
 }
+
+// ---------------------------------------------------------------------------
+//  makeStarDust — a subtle field of drifting particles ("we are made of
+//  star dust"). Purely decorative; used to give rooms atmosphere.
+// ---------------------------------------------------------------------------
+export function makeStarDust(opts = {}) {
+  const {
+    count = 300,
+    area = { x: 30, y: 18, z: 24 },   // half-extents (x/z), full height (y)
+    color = 0xaec6ff,
+    size = 0.1,
+    opacity = 0.5,
+  } = opts;
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = (Math.random() * 2 - 1) * area.x;
+    positions[i * 3 + 1] = Math.random() * area.y;
+    positions[i * 3 + 2] = (Math.random() * 2 - 1) * area.z;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const m = new THREE.PointsMaterial({
+    color, size, transparent: true, opacity, depthWrite: false,
+    blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  const pts = new THREE.Points(g, m);
+  pts.userData.isDust = true;
+  return pts;
+}

@@ -78,6 +78,26 @@ function check(name, ok) {
   return !!ok;
 }
 
+// Dispatch a real click, but only where the canvas actually receives it.
+// HUD overlays (search, legend, detail panel) sit above the canvas; if the
+// centre point is covered we probe a small spiral of offsets first.
+async function clickOnCanvas(px, label) {
+  const probes = [[0, 0], [-14, 0], [14, 0], [0, -14], [0, 14], [-24, 0], [24, 0], [0, -24], [0, 24]];
+  for (const [dx, dy] of probes) {
+    const x = px.x + dx, y = px.y + dy;
+    const at = await evalExpr(
+      `(() => { const el = document.elementFromPoint(${x}, ${y}); return el ? (el.id || el.tagName) : null; })()`
+    );
+    if (at !== 'room') continue;
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await new Promise((r) => setTimeout(r, 120));
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+    return { x, y };
+  }
+  throw new Error(`${label}: no clickable canvas point around (${px.x}, ${px.y})`);
+}
+
 async function main() {
   // connect to the debugger
   console.log('DEBUG: waiting for debugger target…');
@@ -392,12 +412,16 @@ async function main() {
     };
   })()`);
 
-  // re-select 118 as the final resting state (mirrors previous behaviour)
+  // re-select 118 as the final resting state (mirrors previous behaviour).
+  // Software rendering runs the 1.15 s camera tween slower than real time
+  // (dt is capped), so wait for the camera to actually settle — a fixed
+  // sleep would project the portal from a still-moving camera.
   results.finalSelected = await evalExpr(`(() => {
     window.RPRoom.selectByNumber(118);
     return window.RPRoom.selected();
   })()`);
-  await evalExpr('new Promise(r => setTimeout(r, 1200))');
+  await waitFor(async () => (await evalExpr('window.RPRoom.cameraIdle()')) === true, 30000, 'camera idle after final select');
+  await evalExpr('new Promise(r => setTimeout(r, 300))');
 
   // ------------------------------------------------------------------
   //  PT-T3 additions — per-element rooms
@@ -414,16 +438,21 @@ async function main() {
       panelVisible: !document.getElementById('panel').classList.contains('hidden'),
       panelHasOg: (document.getElementById('panel').innerText || '').includes('Oganesson'),
       panelLinkHref: a ? a.getAttribute('href') : null,
+      portalScreen: window.RPRoom.portalScreen(118),
     };
   })()`);
 
-  // enter Oganesson's own room and check it built
-  const baseUrl = URL.endsWith('/') ? URL : URL + '/';
-  const roomUrl = baseUrl + 'rooms/118-oganesson.html';
-  await send('Page.navigate', { url: roomUrl });
+  // E2E: really CLICK the 3D portal above Oganesson -> must enter its room.
+  // The click must land on the canvas, so verify the point is not covered by
+  // any HUD overlay (panel etc.) and nudge around the ring if needed.
+  const portalPx = results.rooms.main.portalScreen;
+  if (!portalPx) throw new Error('portal not on screen for click test');
+  await clickOnCanvas(portalPx, 'portal');
+  await waitFor(async () => (await evalExpr('location.pathname')).endsWith('/rooms/118-oganesson.html'), 20000, 'portal click navigates into the room');
   await waitFor(async () => (await evalExpr('!!window.RPRoom')) === true, 30000, 'room page built');
   await waitFor(async () => (await evalExpr('!document.getElementById("loading")')) === true, 15000, 'room loading gone');
-  results.rooms.page = await evalExpr(`(() => {
+  results.rooms.page = { enteredByPortalClick: true };
+  results.rooms.page = Object.assign(results.rooms.page, await evalExpr(`(() => {
     const b = document.getElementById('back');
     return {
       href: location.pathname.split('/').pop(),
@@ -435,7 +464,7 @@ async function main() {
       back: b ? b.getAttribute('href') : null,
       loadingGone: !document.getElementById('loading'),
     };
-  })()`);
+  })()`));
 
   // focusing the atom opens the room's own panel with a back link
   await evalExpr('window.RPRoom.focusAtom()');
@@ -450,6 +479,32 @@ async function main() {
       backHref: a ? a.getAttribute('href') : null,
     };
   })()`);
+  results.rooms.layout = await evalExpr('window.RPRoom.roomSize()');
+
+  // hide the panel so it cannot cover the door, then really CLICK the
+  // in-world return door -> must navigate back to the gallery
+  await evalExpr("document.getElementById('panel-close').click()");
+  const doorPxJson = await evalExpr('JSON.stringify(window.RPRoom.projectDoor())');
+  const doorPx = JSON.parse(doorPxJson);
+  if (!doorPx) throw new Error('return door not on screen for click test');
+  await clickOnCanvas(doorPx, 'door');
+  await waitFor(async () => {
+    const p = await evalExpr('location.pathname');
+    return p.endsWith('/index.html') || p.endsWith('/');
+  }, 20000, 'door click navigates back to the gallery');
+  await waitFor(async () => (await evalExpr('!!window.RPRoom && window.RPRoom.elements === 118')) === true, 30000, 'gallery rebuilt after return');
+  results.rooms.returnedByDoorClick = true;
+
+  // E2E: the plain #back HUD anchor works from another element room too
+  const baseUrl2 = URL.endsWith('/') ? URL : URL + '/';
+  await send('Page.navigate', { url: baseUrl2 + 'rooms/001-hydrogen.html' });
+  await waitFor(async () => (await evalExpr('!!window.RPRoom')) === true, 30000, 'hydrogen room built');
+  results.rooms.hydrogen = await evalExpr(`(() => ({ element: window.RPRoom.element, back: window.RPRoom.backAnchor() }))()`);
+  await evalExpr("document.getElementById('back').click()");
+  await waitFor(async () => {
+    const p = await evalExpr('location.pathname');
+    return p.endsWith('/index.html') || p.endsWith('/');
+  }, 20000, 'back anchor returns to the gallery');
 
   console.log(JSON.stringify(results, null, 2));
   console.log('ERRORS:', errors.length ? errors : '(none)');
@@ -521,7 +576,15 @@ async function main() {
         results.rooms?.panel?.visible === true
         && results.rooms?.panel?.hasOg === true
         && results.rooms?.panel?.hasNumber === true
-        && results.rooms?.panel?.backHref === '../index.html');
+        && results.rooms?.panel?.backHref === '../index.html')
+    && check('rooms: clicking the 3D portal enters the element\'s room',
+        results.rooms?.page?.enteredByPortalClick === true)
+    && check('rooms: clicking the in-world door returns to the gallery',
+        results.rooms?.returnedByDoorClick === true
+        && results.rooms?.layout?.w >= 34 && results.rooms?.layout?.h >= 22)
+    && check('rooms: #back anchor works from another room (001-hydrogen)',
+        results.rooms?.hydrogen?.element?.n === 1
+        && results.rooms?.hydrogen?.back === '../index.html');
 
   const passed = checkResults.filter((c) => c.ok).length;
   const failed = checkResults.filter((c) => !c.ok).length;

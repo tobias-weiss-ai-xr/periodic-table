@@ -6,7 +6,7 @@
 // =========================================================================
 import * as THREE from 'three';
 
-import { buildAtom, buildDoor, makeLabel, orbitAtom } from './lib/primitives.js';
+import { buildAtom, buildDoor, makeLabel, makeStarDust, orbitAtom } from './lib/primitives.js';
 import { catColor, catHex, catLabel, elementDetailHTML } from './lib/theme.js';
 import { createFreeFlight } from './lib/controls.js';
 import { setupXrButton, createVrRig } from './lib/xr.js';
@@ -17,11 +17,11 @@ import { clamp, easeInOutCubic } from './lib/util.js';
 const el = window.ROOM_ELEMENT;
 
 // ---------------------------------------------------------------------------
-//  Room parameters (a small chamber, customised per element)
+//  Room parameters — a grand, airy chamber built around one monument
 // ---------------------------------------------------------------------------
-const W = 26, D = 22, H = 18;            // room extents
-const ATOM_SCALE = 2.0;                  // how big the atom is in here
-const ATOM_Y = 9.0;                      // atom centre height
+const W = 36, D = 30, H = 24;            // room extents (walls ±W/2, ±D/2, top H)
+const ATOM_SCALE = 2.6;                  // how big the atom is in here
+const ATOM_Y = 12;                       // atom centre height
 const CAT = catHex(el.cat);
 
 // ---------------------------------------------------------------------------
@@ -35,21 +35,24 @@ renderer.xr.enabled = true;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05060a);
-scene.fog = new THREE.Fog(0x05060a, 18, 60);
+scene.fog = new THREE.Fog(0x05060a, 26, 85);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 120);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
 camera.rotation.order = 'YXZ';
-camera.position.set(0, 5.5, 9.5);
-camera.lookAt(0, ATOM_Y - 1, 0);
+camera.position.set(0, 7, 13.5);
+camera.lookAt(0, 10.5, 0);
 
 scene.add(new THREE.AmbientLight(0x44506e, 0.9));
 scene.add(new THREE.HemisphereLight(0x9fc2ff, 0x140f08, 0.6));
 const dir = new THREE.DirectionalLight(0xffffff, 0.5);
 dir.position.set(4, 14, 8);
 scene.add(dir);
-const accent = new THREE.PointLight(parseInt(CAT.slice(1), 16) || 0x3fe0ff, 900, 60);
-accent.position.set(0, ATOM_Y, 5);
+const accent = new THREE.PointLight(parseInt(CAT.slice(1), 16) || 0x3fe0ff, 1100, 70);
+accent.position.set(0, ATOM_Y, 6);
 scene.add(accent);
+const rim = new THREE.PointLight(0x3fe0ff, 500, 80);
+rim.position.set(-12, 21, -9);
+scene.add(rim);
 
 // ---------------------------------------------------------------------------
 //  Room shell + door + atom pedestal + holograms
@@ -70,13 +73,42 @@ scene.add(buildRoomShell({
   ],
 }));
 
-// pedestal under the atom
-const pedestal = new THREE.Mesh(
-  new THREE.CylinderGeometry(2.4, 3.2, 2.2, 48),
-  new THREE.MeshStandardMaterial({ color: 0x0a0f1c, roughness: 0.7, metalness: 0.3, emissive: catColor(el.cat), emissiveIntensity: 0.08 })
-);
-pedestal.position.set(0, 1.1, 0);
-scene.add(pedestal);
+// ---------------------------------------------------------------------------
+//  Art direction — watermark symbol, tiered pedestal, floor mandala, stardust
+// ---------------------------------------------------------------------------
+
+// monumental element symbol on the back wall, like gallery lettering
+const watermark = makeLabel(el.s, { color: catHex(el.cat), size: 220, scale: 0.045 });
+watermark.material.opacity = 0.13;
+watermark.material.depthTest = true;    // let the atom float in front of it
+watermark.position.set(0, 15.2, -D / 2 + 0.6);
+scene.add(watermark);
+
+// two-tier pedestal under the atom
+const pedestalMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0f1c, roughness: 0.7, metalness: 0.3, emissive: catColor(el.cat), emissiveIntensity: 0.08,
+});
+const pedestalBase = new THREE.Mesh(new THREE.CylinderGeometry(4.4, 5.0, 0.9, 64), pedestalMat);
+pedestalBase.position.set(0, 0.45, 0);
+scene.add(pedestalBase);
+const pedestalTop = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 1.7, 64), pedestalMat);
+pedestalTop.position.set(0, 1.75, 0);
+scene.add(pedestalTop);
+
+// floor mandala — concentric category-coloured rings radiating from the monument
+[[6.8, 0.35], [9.2, 0.22], [11.6, 0.12]].forEach(([r, op], i) => {
+  const ringMesh = new THREE.Mesh(
+    new THREE.RingGeometry(r - 0.05, r + 0.05, 96),
+    new THREE.MeshBasicMaterial({ color: catColor(el.cat), transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ringMesh.rotation.x = -Math.PI / 2;
+  ringMesh.position.y = 0.03 + i * 0.004;
+  scene.add(ringMesh);
+});
+
+// stardust — every element was forged in a star
+const dust = makeStarDust({ count: 380, area: { x: W / 2 - 1.5, y: H - 3, z: D / 2 - 1.5 }, color: 0xaec6ff, size: 0.1, opacity: 0.5 });
+scene.add(dust);
 
 // the giant Bohr atom
 const atom = buildAtom(el);
@@ -84,13 +116,13 @@ atom.scale.setScalar(ATOM_SCALE);
 atom.position.set(0, ATOM_Y, 0);
 scene.add(atom);
 
-// holographic fact cards floating around the atom
-const factCard = createCardSprite({ width: 760, height: 300, scale: [4.9, 1.95, 1] });
+// holographic fact cards floating like satellites around the monument
+const factCard = createCardSprite({ width: 760, height: 300, scale: [5.6, 2.2, 1] });
 paintElementCard(factCard, el);
-factCard.position.set(3.2, ATOM_Y + 1.2, 3.0);
+factCard.position.set(10, 14.2, 6);
 scene.add(factCard);
 
-const extraCard = createCardSprite({ width: 560, height: 340, scale: [3.5, 2.1, 1] });
+const extraCard = createCardSprite({ width: 560, height: 340, scale: [4.1, 2.5, 1] });
 paintTextCard(extraCard, {
   title: `${el.s} — data`,
   titleColor: CAT,
@@ -103,12 +135,12 @@ paintTextCard(extraCard, {
     `density            ${el.dens != null ? el.dens + ' g/cm³' : '—'}`,
   ],
 });
-extraCard.position.set(-4.6, ATOM_Y - 1.2, 2.4);
+extraCard.position.set(-10.2, 11.6, 4.5);
 scene.add(extraCard);
 
 // summary card (short lead paragraph)
 if (el.sum) {
-  const sumCard = createCardSprite({ width: 620, height: 300, scale: [4.0, 1.95, 1] });
+  const sumCard = createCardSprite({ width: 620, height: 300, scale: [4.7, 2.3, 1] });
   const lines = [];
   let cur = '';
   for (const word of el.sum.split(' ')) {
@@ -117,22 +149,26 @@ if (el.sum) {
   }
   if (cur.trim()) lines.push(cur.trim());
   paintTextCard(sumCard, { title: `about ${el.name}`, titleColor: '#3fe0ff', lines });
-  sumCard.position.set(1.2, ATOM_Y - 3.6, 0.6);
+  sumCard.position.set(3.6, 7.2, 11);
   scene.add(sumCard);
 }
 
-// the return door — walk through / click it to go back to the gallery
+// the return door — walk through / click it to go back to the gallery.
+// Offset to the left so the atom monument never stands in its way.
 const door = buildDoor({
   text: 'PERIODIC TABLE ROOM',
   sub: '← return to the 118-element gallery',
-  color: '#3fe0ff', scale: 2.0, opacity: 0.9,
+  color: '#3fe0ff', scale: 2.2, opacity: 0.9,
 });
-door.position.set(0, 7.6, -D / 2 + 1.0);
+door.position.set(-9.5, 7.2, -D / 2 + 1.4);
 scene.add(door);
+// only the door's ring/disc are click targets — its glow + labels must not
+// intercept rays aimed past it
+door.traverse((o) => { if (o.isSprite) o.raycast = () => {}; });
 
-// a small "room" name sign hanging over the door
-const doorTag = makeLabel(`EXIT — HOME`, { color: '#5d6884', size: 26, scale: 0.008 });
-doorTag.position.set(0, 12.4, -D / 2 + 0.8);
+// a small sign hanging over the door
+const doorTag = makeLabel(`EXIT — GALLERY`, { color: '#5d6884', size: 26, scale: 0.008 });
+doorTag.position.set(-9.5, 11.3, -D / 2 + 1.6);
 scene.add(doorTag);
 
 // ---------------------------------------------------------------------------
@@ -141,13 +177,13 @@ scene.add(doorTag);
 const vrRig = createVrRig({
   renderer, scene,
   onSelect: (obj) => {
-    if (isPartOf(obj, door)) { location.href = '../index.html'; return; }
-    if (isPartOf(obj, atom)) focusAtom();
+    if (partOf(obj, door)) { location.href = '../index.html'; return; }
+    if (partOf(obj, atom)) focusAtom();
   },
 });
 const controls = createFreeFlight({
   renderer, camera,
-  bounds: { xMin: -W / 2, xMax: W / 2, zMin: -D / 2, zMax: D / 2 },
+  bounds: { xMin: -W / 2 + 1, xMax: W / 2 - 1, zMin: -D / 2 + 1, zMax: D / 2 - 1 },
   yMin: 1, yMax: H - 1,
   getControllers: () => vrRig.controllers,
 });
@@ -159,7 +195,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2(0, 0);
 const pickTargets = () => [atom, door];
 
-function partOf(group, obj) {
+function partOf(obj, group) {
   let p = obj;
   while (p && p !== group) p = p.parent;
   return p === group;
@@ -174,12 +210,15 @@ function pick(e) {
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
   }
-  const hits = raycaster.intersectObjects(pickTargets(), true);
-  return hits.length ? hits[0].object : null;
+  // the return door wins over the atom hologram that may float in front of it
+  const doorHits = raycaster.intersectObject(door, true);
+  if (doorHits.length) return doorHits[0].object;
+  const atomHits = raycaster.intersectObject(atom, true);
+  return atomHits.length ? atomHits[0].object : null;
 }
 
 function focusAtom() {
-  const eye = new THREE.Vector3(0, ATOM_Y - 1.5, 6.2);
+  const eye = new THREE.Vector3(0, ATOM_Y - 1.5, 12);
   const look = new THREE.Vector3(0, ATOM_Y, 0);
   tween = {
     from: camera.position.clone(), to: eye,
@@ -222,8 +261,8 @@ function onSessionStart() {
   xrBtn.disabled = false;
   xrHint.classList.remove('hidden');
   hint.classList.add('hidden');
-  camera.position.set(0, 1.6, 7);
-  camera.lookAt(0, ATOM_Y, 0);
+  camera.position.set(0, 1.6, 11);
+  camera.lookAt(0, 9.5, 0);
 }
 function onSessionEnd() {
   xrBtn.textContent = 'Enter XR';
@@ -263,8 +302,9 @@ function stepCamera(dt) {
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   orbitAtom(atom, dt);
+  dust.rotation.y += dt * 0.012;
   stepCamera(dt);
-  vrRig.pick(pickTargets);
+  vrRig.pick(pickTargets, () => [door]);
   if (renderer.xr.isPresenting) hint.classList.add('hidden');
 
   frames++;
@@ -305,4 +345,13 @@ window.RPRoom = {
   doorPresent: () => !!door,
   backAnchor: () => document.getElementById('back')?.getAttribute('href') || null,
   focusAtom: () => { focusAtom(); },
+  projectDoor: () => {
+    const v = door.position.clone().project(camera);
+    if (v.z > 1) return null;
+    return {
+      x: Math.round((v.x * 0.5 + 0.5) * window.innerWidth),
+      y: Math.round((-v.y * 0.5 + 0.5) * window.innerHeight),
+    };
+  },
+  roomSize: () => ({ w: W, d: D, h: H }),
 };

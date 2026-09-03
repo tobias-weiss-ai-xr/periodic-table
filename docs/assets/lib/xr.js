@@ -98,7 +98,7 @@ export function createVrRig({ renderer, scene, onSelect = () => {} }) {
     vrLine.material.color.setHex(hit ? 0xffcf5c : 0x3fe0ff);
   }
 
-  function pick(getTargets) {
+  function pick(getTargets, priorityTargets) {
     const c = controllers[0];
     if (!renderer.xr.isPresenting || !c || !c.visible) {
       vrLine.visible = false;
@@ -108,7 +108,14 @@ export function createVrRig({ renderer, scene, onSelect = () => {} }) {
     const origin = c.position;
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
     raycaster.set(origin, dir);
-    const hits = raycaster.intersectObjects(getTargets(), true);
+    // priority targets win over occluders (e.g. the return door behind a
+    // room's giant atom hologram)
+    let hits = [];
+    if (priorityTargets) {
+      const pt = typeof priorityTargets === 'function' ? priorityTargets() : priorityTargets;
+      if (pt && pt.length) hits = raycaster.intersectObjects(pt, true);
+    }
+    if (!hits.length) hits = raycaster.intersectObjects(getTargets(), true);
     vrPoints = hits;
     if (hits.length) {
       aim(hits[0].distance, true);
