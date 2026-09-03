@@ -1,15 +1,27 @@
-// ===========================================================================
+// =========================================================================
 //  The Periodic Table Room — walkable 3D gallery of all 118 elements
-//  three.js (r160) + WebXR. Room shows the extended periodic table as a wall
-//  of atoms; each element is a live Bohr-style atom model. Click to select,
-//  WASD to walk, WebXR button for VR.
-// ===========================================================================
+//  (three.js r160 + WebXR). Room shows the extended periodic table as a wall
+//  of atoms; each element links to its own room (docs/rooms/NNN-name.html).
+//
+//  All reusable building blocks live in ./lib/*:
+//    theme.js      — category palette, labels, number/temperature formatting
+//    primitives.js — text sprites, glows, shared geometry, buildAtom, buildDoor
+//    controls.js   — free-flight movement (keyboard + pointer lock + VR)
+//    xr.js         — WebXR button lifecycle + controller ray rig
+//    shell.js      — parameterised room shell (floor/grid/walls/titles)
+//    infocard.js   — canvas-painted holographic fact cards
+// =========================================================================
 
 import * as THREE from 'three';
-import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { buildAtom, buildDoor, geo, makeGlow, makeLabel, orbitAtom } from './lib/primitives.js';
+import { catColor, catHex, elementDetailHTML } from './lib/theme.js';
+import { createFreeFlight } from './lib/controls.js';
+import { setupXrButton, createVrRig } from './lib/xr.js';
+import { buildRoomShell } from './lib/shell.js';
+import { createCardSprite, paintElementCard } from './lib/infocard.js';
+import { clamp, easeInOutCubic, pad } from './lib/util.js';
 
 const ELEMENTS = window.ELEMENTS;                       // 118 elements (data.js)
-const ELEMENT_CATEGORIES = window.ELEMENT_CATEGORIES;   // [key, label][]  (data.js)
 
 // ---------------------------------------------------------------------------
 //  Tuning constants
@@ -21,143 +33,9 @@ const EYE = 1.6;                     // headset/standing eye height (VR)
 const ROOM_MIN = { x: -37, z: -17 }; // flyable bounds
 const ROOM_MAX = { x: 37, z: 23 };
 const ELECTRON_CAP = 14;             // max electrons drawn per shell
-const MAX_VR_SHELLS = 4;             // shell cap in VR (lower LOD)
 
 // ---------------------------------------------------------------------------
-//  Category palette (dark-theme friendly)
-// ---------------------------------------------------------------------------
-const CATEGORY_HEX = {
-  'alkali metal': '#ff5cc8',
-  'alkaline earth metal': '#ffd166',
-  'transition metal': '#3fe0ff',
-  'post-transition metal': '#7ea8ff',
-  'metalloid': '#b08cff',
-  'diatomic nonmetal': '#ff8a5c',
-  'polyatomic nonmetal': '#a3e635',
-  'lanthanide': '#34d399',
-  'actinide': '#86efac',
-  'halogen': '#f472b6',
-  'noble gas': '#dbeafe',
-};
-const catColor = (key) => new THREE.Color(CATEGORY_HEX[key] || '#9aa5b8');
-const catHex = (key) => CATEGORY_HEX[key] || '#9aa5b8';
-
-// ---------------------------------------------------------------------------
-//  Small helpers
-// ---------------------------------------------------------------------------
-const lerp = (a, b, t) => a + (b - a) * t;
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-
-function makeLabel(text, opts = {}) {
-  const { color = '#e8ecf4', size = 44, mono = true, bg = null, pad = 10, scale = 0.0065 } = opts;
-  const cv = document.createElement('canvas');
-  const ctx = cv.getContext('2d');
-  const font = `${size}px ${mono ? 'ui-monospace, Menlo, Consolas, monospace' : 'sans-serif'}`;
-  ctx.font = font;
-  const w = Math.ceil(ctx.measureText(text).width) + pad * 2;
-  const h = size + pad * 2;
-  cv.width = w; cv.height = h;
-  ctx.font = font;
-  if (bg) {
-    ctx.fillStyle = bg;
-    ctx.roundRect ? ctx.roundRect(0, 0, w, h, 8) : ctx.rect(0, 0, w, h);
-    ctx.fill();
-  }
-  ctx.fillStyle = color;
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, pad, h / 2 + 1);
-  const tex = new THREE.CanvasTexture(cv);
-  tex.minFilter = THREE.LinearFilter;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }));
-  sp.scale.set(w * scale, h * scale, 1);
-  sp.userData.aspect = w / h;
-  return sp;
-}
-
-function makeGlowTexture() {
-  const s = 128;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = s;
-  const ctx = cv.getContext('2d');
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0.0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.3, 'rgba(255,255,255,0.5)');
-  g.addColorStop(1.0, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
-  return new THREE.CanvasTexture(cv);
-}
-function makeGlow(colorHex, size = 1) {
-  const mat = new THREE.SpriteMaterial({
-    map: glowTex, color: colorHex, transparent: true,
-    blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85,
-  });
-  const sp = new THREE.Sprite(mat);
-  sp.scale.set(size, size, size);
-  return sp;
-}
-
-// ---------------------------------------------------------------------------
-//  Shared geometry & materials
-// ---------------------------------------------------------------------------
-let glowTex = null;
-const geo = {
-  nucleus: new THREE.SphereGeometry(0.17, 24, 24),
-  electron: new THREE.SphereGeometry(0.055, 10, 10),
-  tile: new THREE.PlaneGeometry(2.15, 2.15),
-  disc: new THREE.CircleGeometry(0.85, 48),
-  rings: [],
-};
-for (let i = 0; i < 8; i++) geo.rings.push(new THREE.RingGeometry(0.5 + i * 0.3 - 0.02, 0.5 + i * 0.3 + 0.02, 64));
-
-const ELECTRON_HEX = '#eaf4ff';
-
-// ---------------------------------------------------------------------------
-//  Atom builder — nucleus + Bohr shells with orbiting electrons (instanced)
-// ---------------------------------------------------------------------------
-function buildAtom(el, opts = {}) {
-  const { shells = el.sh, low = false } = opts;
-  const cpk = new THREE.Color('#' + el.c);
-  const group = new THREE.Group();
-  const ringHex = catHex(el.cat);
-
-  const nuc = new THREE.Mesh(geo.nucleus, new THREE.MeshStandardMaterial({
-    color: cpk, emissive: cpk, emissiveIntensity: 1.15, roughness: 0.35, metalness: 0.2,
-  }));
-  group.add(nuc);
-
-  const nShells = low ? Math.min(shells.length, MAX_VR_SHELLS) : shells.length;
-  for (let i = 0; i < nShells; i++) {
-    const count = low ? Math.min(shells[i], 6) : Math.min(shells[i], ELECTRON_CAP);
-    const ringGroup = new THREE.Group();
-    const ring = new THREE.Mesh(geo.rings[i], new THREE.MeshBasicMaterial({
-      color: ringHex, transparent: true, opacity: low ? 0.55 : 0.8, side: THREE.DoubleSide,
-    }));
-    ringGroup.add(ring);
-    if (count > 0) {
-      const inst = new THREE.InstancedMesh(geo.electron, new THREE.MeshBasicMaterial({
-        color: ELECTRON_HEX, transparent: true, opacity: 0.95,
-      }), count);
-      const m = new THREE.Matrix4();
-      for (let k = 0; k < count; k++) {
-        const a = (k / count) * Math.PI * 2;
-        m.makeTranslation(Math.cos(a) * (0.5 + i * 0.3), Math.sin(a) * (0.5 + i * 0.3), 0);
-        inst.setMatrixAt(k, m);
-      }
-      inst.instanceMatrix.needsUpdate = true;
-      ringGroup.add(inst);
-    }
-    ringGroup.userData.speed = 0.45 + i * 0.14;
-    ringGroup.userData.tilt = (i % 3) * 0.6 - 0.55;
-    group.add(ringGroup);
-  }
-  group.userData.nShells = nShells;
-  return group;
-}
-
-// ---------------------------------------------------------------------------
-//  Element node — a display case on the wall
+//  Element node — a display case on the wall (+ its portable room door)
 // ---------------------------------------------------------------------------
 function buildNode(el) {
   const g = new THREE.Group();
@@ -180,7 +58,7 @@ function buildNode(el) {
   g.add(halo);
 
   // the atom itself
-  const atom = buildAtom(el);
+  const atom = buildAtom(el, { electronCap: ELECTRON_CAP });
   g.add(atom);
 
   // symbol above, number below
@@ -208,17 +86,33 @@ function buildNode(el) {
   beacon.position.set(x, 0.03, WALL_Z);
   beacon.scale.set(1.15, 1.15, 1);
 
+  // the portable "room door" — one per element, hidden until selected.
+  // Clicking it (or its panel link) teleports to that element's own room.
+  const portal = buildDoor({
+    text: `${el.s}'s room`, sub: 'ENTER →',
+    color: catHex(el.cat), scale: 0.55, opacity: 0.85,
+  });
+  portal.position.set(x, y + 2.35, WALL_Z + 5.2);
+  portal.visible = false;
+  scene.add(portal);
+
   const state = {
     el, g: null,
-    atom, halo, sym, num, ring, tile,
+    atom, halo, sym, num, ring, tile, portal,
     hovered: false,
+    portalHovered: false,
     selected: false,
     matched: true,
     dimmed: false,
     baseX: x, baseY: y,
   };
 
-  return { g, beacon, state };
+  return { g, beacon, portal, state };
+}
+
+/** Relative URL of an element's room, from the main page (docs/index.html). */
+export function roomHref(el) {
+  return `rooms/${pad(el.n)}-${el.name.toLowerCase()}.html`;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,42 +122,11 @@ const panel = document.getElementById('panel');
 const panelBody = document.getElementById('panel-body');
 const panelClose = document.getElementById('panel-close');
 
-function fmt(v, digits = 4) {
-  if (v === null || v === undefined || Number.isNaN(v)) return '—';
-  return Number(v).toLocaleString('en-US', { maximumFractionDigits: digits });
-}
-function fmtTemp(k) {
-  if (k === null || k === undefined || Number.isNaN(k)) return '—';
-  return `${(k - 273.15).toFixed(1)}&nbsp;°C`;
-}
-
 function showDetail(node) {
   const el = node.el;
-  const shells = (el.sh || []).join(' · ');
-  const catLabel = (ELEMENT_CATEGORIES.find((c) => c[0] === el.cat) || [el.cat, el.cat])[1];
-  const mass = el.m != null ? `${fmt(el.m, 6)} u` : '—';
-  panelBody.innerHTML = `
-    <div class="hdr">
-      <div class="big" style="color:${catHex(el.cat)}; border-color:${catHex(el.cat)}44">${el.s}</div>
-      <div>
-        <div class="name">${el.name}</div>
-        <div class="num">atomic number ${el.n}</div>
-        <span class="cat-tag" style="background:${catHex(el.cat)}">${catLabel}</span>
-      </div>
-    </div>
-    <dl class="fact-grid">
-      <dt>atomic mass</dt><dd>${mass}</dd>
-      <dt>electron shells</dt><dd>${shells}</dd>
-      <dt>configuration</dt><dd>${el.esem || '—'}</dd>
-      <dt>phase</dt><dd>${el.phase || '—'}</dd>
-      <dt>melting point</dt><dd>${fmtTemp(el.melt)}</dd>
-      <dt>boiling point</dt><dd>${fmtTemp(el.boil)}</dd>
-      <dt>density</dt><dd>${el.dens != null ? fmt(el.dens, 4) + ' g/cm³' : '—'}</dd>
-      <dt>electronegativity</dt><dd>${fmt(el.en, 3)}</dd>
-    </dl>
-    ${el.sum ? `<p class="lead">${el.sum}</p>` : ''}
-    <p class="cite">Data: Bowserinator/Periodic-Table-JSON · visualisation: The Periodic Table Room</p>
-  `;
+  panelBody.innerHTML =
+    elementDetailHTML(el) +
+    `<a class="room-link" href="${roomHref(el)}">Enter ${el.name}'s room →</a>`;
   panel.classList.remove('hidden');
 }
 function hideDetail() {
@@ -282,57 +145,10 @@ function hideDetail() {
 let infoCard = null;
 
 function buildInfoCard() {
-  const cv = document.createElement('canvas');
-  cv.width = 760; cv.height = 300;
-  const ctx = cv.getContext('2d');
-  const tex = new THREE.CanvasTexture(cv);
-  tex.minFilter = THREE.LinearFilter;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: tex, transparent: true, depthWrite: false, depthTest: false, opacity: 0.96,
-  }));
-  sp.scale.set(4.6, 1.82, 1);
-  sp.visible = false;
-  scene.add(sp);
-  sp.userData.ctx = ctx;
-  return sp;
+  return createCardSprite({ width: 760, height: 300, scale: [4.6, 1.82, 1] });
 }
-
 function paintInfoCard(node) {
-  const el = node.el;
-  const ctx = infoCard.userData.ctx;
-  const cv = ctx.canvas;
-  const W = cv.width, H = cv.height;
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = 'rgba(8,11,20,0.86)';
-  ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = catHex(el.cat);
-  ctx.lineWidth = 4;
-  ctx.strokeRect(3, 3, W - 6, H - 6);
-  ctx.textBaseline = 'alphabetic';
-
-  const catLabel = (ELEMENT_CATEGORIES.find((c) => c[0] === el.cat) || [el.cat, el.cat])[1];
-  const mass = el.m != null ? fmt(el.m, 4) : '—';
-
-  ctx.fillStyle = catHex(el.cat);
-  ctx.font = '700 64px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText(`${el.s}`, 30, 84);
-  ctx.fillStyle = '#e8ecf4';
-  ctx.font = '600 46px sans-serif';
-  ctx.fillText(`${el.name}`, 128, 84);
-  ctx.fillStyle = '#8a93a8';
-  ctx.font = '30px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText(`atomic #${el.n} · ${catLabel}`, 128, 122);
-
-  const line = (text, y, color = '#cfd8ea') => {
-    ctx.fillStyle = color; ctx.font = '27px ui-monospace, Menlo, Consolas, monospace';
-    ctx.fillText(text, 30, y);
-  };
-  line(`mass ${mass} u  ·  phase ${el.phase || '—'}`, 168);
-  line(`shells ${(el.sh || []).join('  ')}`, 206);
-  line(`config ${el.esem || '—'}`, 246);
-  line(`melting ${fmtTemp(el.melt)}  ·  boiling ${fmtTemp(el.boil)}  ·  ρ ${el.dens != null ? fmt(el.dens, 2) : '—'} g/cm³`, 282);
-
-  infoCard.material.map.needsUpdate = true;
+  paintElementCard(infoCard, node.el);
   infoCard.position.set(node.baseX, node.baseY, WALL_Z + 4.6);
   infoCard.visible = true;
 }
@@ -369,36 +185,26 @@ gold.position.set(16, 18, -4);
 scene.add(gold);
 
 // ---------------------------------------------------------------------------
-//  Room shell
+//  Room shell (shared builder) + the table grid lines behind the wall
 // ---------------------------------------------------------------------------
-function buildRoom() {
-  const g = new THREE.Group();
-  const dark = new THREE.MeshStandardMaterial({ color: 0x070a12, metalness: 0.3, roughness: 0.9 });
-
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 90), new THREE.MeshStandardMaterial({
-    color: 0x0a0f1c, roughness: 0.85, metalness: 0.25,
-  }));
-  floor.rotation.x = -Math.PI / 2;
-  g.add(floor);
-
-  const grid = new THREE.GridHelper(90, 30, 0x16203a, 0x0c1424);
-  grid.position.y = 0.02;
-  g.add(grid);
-
-  const walls = [
+scene.add(buildRoomShell({
+  width: 120, depth: 90, height: 30,
+  grid: { size: 90, divisions: 30, color: 0x16203a, center: 0x0c1424 },
+  walls: [
     [-38, 0, 0, Math.PI / 2, 3, 34],          // left
     [38, 0, 0, Math.PI / 2, 3, 34],           // right
     [0, 13, -20, 0, 80, 30],                  // back (behind the table)
-    [0, 30, 0, Math.PI / 2, 80, 43],          // ceiling
-  ];
-  walls.forEach(([x, y, z, rx, w, h]) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), dark);
-    m.position.set(x, y, z);
-    m.rotation.x = rx;
-    g.add(m);
-  });
+    [0, 13, 24, 0, 80, 30],                   // entrance wall (room title)
+  ],
+  ceiling: [0, 30, 0, Math.PI / 2, 80, 43],
+  labels: [
+    { text: 'THE PERIODIC TABLE ROOM', color: '#dfe8ff', size: 54, scale: 0.009, position: [0, 24.5, 22.6] },
+    { text: `${ELEMENTS.length} elements · atom models · WebXR · fly freely`, color: '#5d6884', size: 30, scale: 0.008, position: [0, 22.3, 22.6] },
+  ],
+}));
 
-  // wall grid lines behind the periodic table
+// wall grid lines behind the periodic table
+{
   const pts = [];
   for (let c = 1; c <= 18; c++) {
     const x = (c - 9.5) * COL_W;
@@ -412,22 +218,8 @@ function buildRoom() {
     new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color: 0x182742, transparent: true, opacity: 0.5 })
   );
-  g.add(lines);
-
-  // entrance wall with the room title (behind the viewer)
-  const back2 = new THREE.Mesh(new THREE.PlaneGeometry(80, 30), dark);
-  back2.position.set(0, 13, 24);
-  g.add(back2);
-  const title = makeLabel('THE PERIODIC TABLE ROOM', { color: '#dfe8ff', size: 54, scale: 0.009 });
-  title.position.set(0, 24.5, 22.6);
-  g.add(title);
-  const sub = makeLabel('118 elements · atom models · WebXR · fly freely', { color: '#5d6884', size: 30, scale: 0.008 });
-  sub.position.set(0, 22.3, 22.6);
-  g.add(sub);
-
-  return g;
+  scene.add(lines);
 }
-scene.add(buildRoom());
 
 // ---------------------------------------------------------------------------
 //  Element nodes
@@ -446,14 +238,27 @@ ELEMENTS.forEach((el) => {
 });
 
 // ---------------------------------------------------------------------------
-//  Movement state (desktop + VR-shared)
+//  Movement + XR rig (shared)
 // ---------------------------------------------------------------------------
-const moveState = { fwd: 0, strafe: 0, sprint: false };
-const keys = new Set();
-let locked = false;
-let tween = null; // {a,b,from,to,fromLook,toLook,t,dur}
+const vrRig = createVrRig({
+  renderer, scene,
+  onSelect: (obj) => {
+    const t = classify(obj);
+    if (!t) return;
+    if (t.portal) { enterRoom(t.node.el); return; }
+    focusElement(t.node);
+  },
+});
+const controls = createFreeFlight({
+  renderer, camera,
+  bounds: { xMin: ROOM_MIN.x, xMax: ROOM_MAX.x, zMin: ROOM_MIN.z, zMax: ROOM_MAX.z },
+  yMin: 1, yMax: 29,
+  getControllers: () => vrRig.controllers,
+});
+
+let tween = null; // {from,to,fromLook,toLook,t,dur}
 let currentNode = null;   // selected
-let hoverNode = null;
+let hoverTarget = null;   // { node, portal } of the current hover
 
 function setSelected(node, on) {
   if (!node) return;
@@ -467,10 +272,14 @@ function setSelected(node, on) {
 function refreshVisual() {
   nodes.forEach((n) => {
     const on = n === currentNode;
-    const hov = n.hovered && !on;
+    const hov = (n.hovered || n.portalHovered) && !on;
     if (currentNode !== n) n.halo.material.opacity = hov ? 0.8 : (n.dimmed ? 0.16 : 0.5);
     n.sym.material.opacity = on ? 1 : hov ? 1 : 0.92;
     n.tile.material.opacity = on ? 0.16 : hov ? 0.12 : 0.07;
+    if (n.portal) {
+      const show = n === currentNode && n.g.visible;
+      if (n.portal.visible !== show) n.portal.visible = show;
+    }
   });
 }
 
@@ -497,81 +306,12 @@ function focusElement(node) {
 }
 
 let _lookTarget = new THREE.Vector3(0, 13, WALL_Z);
+const _tmpDir = new THREE.Vector3();
 function getLookAt() { return _lookTarget; }
 function updateLookAtFromCamera() {
   camera.getWorldDirection(_tmpDir);
   _lookTarget.copy(camera.position).add(_tmpDir.multiplyScalar(20));
 }
-const _tmpDir = new THREE.Vector3();
-
-// ---------------------------------------------------------------------------
-//  Picking
-// ---------------------------------------------------------------------------
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2(0, 0);   // [-1,1] cursor (unlocked)
-const atomGroups = () => elementNodeList.map((n) => n.atom);
-
-function nodeOf(obj) {
-  for (const n of elementNodeList) {
-    let p = obj;
-    while (p && p !== n.atom) p = p.parent;
-    if (p === n.atom) return n;
-  }
-  return null;
-}
-function pickFromCamera(e) {
-  if (locked) {
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);   // centre reticle
-  } else {
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-  }
-  const hits = raycaster.intersectObjects(atomGroups(), true);
-  return hits.length ? hits[0].object : null;
-}
-
-renderer.domElement.addEventListener('pointermove', (e) => {
-  const hit = pickFromCamera(e);
-  const node = hit ? nodeOf(hit) : null;
-  if (hoverNode !== node) { hoverNode = node; refreshVisual(); }
-  if (locked) renderer.domElement.style.cursor = hoverNode ? 'none' : 'none';
-  else renderer.domElement.style.cursor = hoverNode ? 'pointer' : '';
-});
-
-renderer.domElement.addEventListener('click', (e) => {
-  if (locked) {
-    const hit = pickFromCamera(e);   // centre reticle
-    const node = hit ? nodeOf(hit) : null;
-    if (node) focusElement(node);
-    return;
-  }
-  const hit = pickFromCamera(e);
-  const node = hit ? nodeOf(hit) : null;
-  if (node) { focusElement(node); return; }
-  // clicking empty space acquires the mouse
-  renderer.domElement.requestPointerLock();
-});
-
-// ---------------------------------------------------------------------------
-//  Pointer lock
-// ---------------------------------------------------------------------------
-document.addEventListener('pointerlockchange', () => {
-  locked = document.pointerLockElement === renderer.domElement;
-  hint.classList.toggle('faded', locked);
-});
-document.addEventListener('mousemove', (e) => {
-  if (!locked) return;
-  camera.rotation.y -= e.movementX * 0.0022;
-  camera.rotation.x = clamp(camera.rotation.x - e.movementY * 0.0022, -1.35, 1.35);
-});
-const keySym = (e) => (e.code === 'Space' ? 'space' : e.key.toLowerCase());
-document.addEventListener('keydown', (e) => {
-  keys.add(keySym(e));
-  if (e.code === 'Space' && locked) e.preventDefault();
-});
-document.addEventListener('keyup', (e) => keys.delete(keySym(e)));
 
 function stepCamera(dt) {
   if (tween) {
@@ -583,36 +323,105 @@ function stepCamera(dt) {
     if (tween.t >= 1) tween = null;
     return;
   }
-  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  dir.y = 0; dir.normalize();
-  const right = new THREE.Vector3(-dir.z, 0, dir.x);
-  const sprint = moveState.sprint || keys.has('control');
-  const speed = (sprint ? 11 : 5.2);
-  const move = new THREE.Vector3();
-  // keyboard — free flight (no gravity outside VR)
-  if (keys.has('w') || keys.has('arrowup')) move.addScaledVector(dir, speed * dt);
-  if (keys.has('s') || keys.has('arrowdown')) move.addScaledVector(dir, -speed * dt);
-  if (keys.has('a') || keys.has('arrowleft')) move.addScaledVector(right, -speed * dt);
-  if (keys.has('d') || keys.has('arrowright')) move.addScaledVector(right, speed * dt);
-  if (keys.has('space')) camera.position.y += speed * 0.55 * dt;
-  if (keys.has('shift')) camera.position.y -= speed * 0.55 * dt;
-  // vr thumbstick (any connected gamepad)
-  for (const c of controllers) {
-    const gp = c.gamepad;
-    if (gp && gp.axes && gp.axes.length >= 2) {
-      const f = -gp.axes[1], r = gp.axes[0];
-      if (Math.abs(f) > 0.08) move.addScaledVector(dir, f * speed * 1.15 * dt);
-      if (Math.abs(r) > 0.08) move.addScaledVector(right, r * speed * 1.15 * dt);
-      if (gp.axes.length >= 4) camera.rotation.y -= gp.axes[2] * 0.9 * dt;
-    }
-  }
-  camera.position.x = clamp(camera.position.x + move.x, ROOM_MIN.x + 1.2, ROOM_MAX.x - 1.2);
-  const z = camera.position.z + move.z;
-  camera.position.z = clamp(z, ROOM_MIN.z + 1.2, ROOM_MAX.z - 1.2);
-  // height is free-flight on desktop (headset supplies its own height in VR)
-  if (!renderer.xr.isPresenting) camera.position.y = clamp(camera.position.y, 1.0, 29);
+  controls.step(dt, renderer.xr.isPresenting);
   updateLookAtFromCamera();
 }
+
+// ---------------------------------------------------------------------------
+//  Picking (atoms AND portable room doors)
+// ---------------------------------------------------------------------------
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2(0, 0);   // [-1,1] cursor (unlocked)
+
+const pickTargets = () => {
+  const arr = [];
+  for (const n of elementNodeList) arr.push(n.atom);
+  for (const n of elementNodeList) if (n.portal) arr.push(n.portal);
+  return arr;
+};
+
+function nodeOf(obj) {
+  for (const n of elementNodeList) {
+    let p = obj;
+    while (p && p !== n.atom) p = p.parent;
+    if (p === n.atom) return n;
+  }
+  return null;
+}
+function portalOf(obj) {
+  for (const n of elementNodeList) {
+    if (!n.portal) continue;
+    let p = obj;
+    while (p && p !== n.portal) p = p.parent;
+    if (p === n.portal) return n;
+  }
+  return null;
+}
+function classify(obj) {
+  if (!obj) return null;
+  const pn = portalOf(obj);
+  if (pn) return { node: pn, portal: true };
+  const node = nodeOf(obj);
+  return node ? { node, portal: false } : null;
+}
+
+function pick(e) {
+  if (controls.locked || renderer.xr.isPresenting) {
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);   // centre reticle
+  } else {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+  }
+  const hits = raycaster.intersectObjects(pickTargets(), true);
+  return hits.length ? hits[0].object : null;
+}
+
+function applyHover(t) {
+  if (!t) return;
+  if (t.portal) t.node.portalHovered = true;
+  else t.node.hovered = true;
+}
+function clearHover(t) {
+  if (!t) return;
+  t.node.hovered = false;
+  t.node.portalHovered = false;
+}
+function sameTarget(a, b) {
+  return (a == null && b == null) || (a && b && a.node === b.node && a.portal === b.portal);
+}
+function updateHover(t) {
+  if (sameTarget(t, hoverTarget)) return;
+  clearHover(hoverTarget);
+  hoverTarget = t;
+  applyHover(hoverTarget);
+  refreshVisual();
+}
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  const t = classify(pick(e));
+  updateHover(t);
+  renderer.domElement.style.cursor =
+    controls.locked ? 'none' : (t ? 'pointer' : '');
+});
+
+renderer.domElement.addEventListener('click', (e) => {
+  const t = classify(pick(e));
+  if (t) {
+    if (t.portal) { enterRoom(t.node.el); return; }
+    focusElement(t.node);
+    return;
+  }
+  if (!controls.locked) renderer.domElement.requestPointerLock();
+});
+
+function enterRoom(el) { location.href = roomHref(el); }
+
+// hint fades while the mouse is captured by pointer lock
+document.addEventListener('pointerlockchange', () => {
+  hint.classList.toggle('faded', controls.locked);
+});
 
 // ---------------------------------------------------------------------------
 //  Search + category filter
@@ -657,7 +466,7 @@ function setActiveCat(key) {
     if (first) focusElement(first);
   }
 }
-ELEMENT_CATEGORIES.forEach(([key, label]) => {
+window.ELEMENT_CATEGORIES.forEach(([key, label]) => {
   const chip = document.createElement('button');
   chip.className = 'chip';
   chip.dataset.cat = key;
@@ -667,28 +476,10 @@ ELEMENT_CATEGORIES.forEach(([key, label]) => {
 });
 
 // ---------------------------------------------------------------------------
-//  XR
+//  XR session lifecycle (shared button + rig)
 // ---------------------------------------------------------------------------
 const xrBtn = document.getElementById('xr');
 const xrHint = document.getElementById('xr-hint');
-const controllers = [];
-const raycasterVr = new THREE.Raycaster();
-let vrPoints = [];
-
-function setupXR() {
-  if (!navigator.xr) {
-    xrBtn.classList.remove('hidden');
-    xrBtn.disabled = true;
-    xrBtn.textContent = 'XR unavailable';
-    xrBtn.title = 'WebXR not available in this browser';
-    return;
-  }
-  navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
-    xrBtn.classList.remove('hidden');
-    xrBtn.disabled = !ok;
-    xrBtn.textContent = ok ? 'Enter XR' : 'XR unavailable (use a VR headset)';
-  });
-}
 
 function onSessionStart() {
   xrBtn.textContent = 'Exit XR';
@@ -707,14 +498,12 @@ function onSessionEnd() {
   hint.classList.remove('hidden');
   setNodeLOD(false);
 }
-
-renderer.xr.addEventListener('sessionstart', onSessionStart);
-renderer.xr.addEventListener('sessionend', onSessionEnd);
+setupXrButton({ renderer, btn: xrBtn, onSessionStart, onSessionEnd });
 
 function setNodeLOD(low) {
   elementNodeList.forEach((n) => {
     const old = n.atom;
-    const neo = buildAtom(n.el, { low });
+    const neo = buildAtom(n.el, { low, electronCap: ELECTRON_CAP });
     neo.scale.copy(old.scale);
     old.parent.add(neo);
     old.parent.remove(old);
@@ -724,77 +513,6 @@ function setNodeLOD(low) {
   });
   refreshVisual();
 }
-
-const controllerModelFactory = new XRControllerModelFactory();
-function makeController(idx) {
-  const c = renderer.xr.getController(idx);
-  c.addEventListener('selectstart', () => {
-    if (!vrPoints.length) return;
-    const node = nodeOf(vrPoints[0].object);
-    if (node) focusElement(node);
-  });
-  scene.add(c);
-  const grip = renderer.xr.getControllerGrip(idx);
-  grip.add(controllerModelFactory.createControllerModel(grip));
-  scene.add(grip);
-  controllers.push(c);
-}
-makeController(0);
-makeController(1);
-
-// line for the right-hand VR pointer
-const vrLineGeo = new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1),
-]);
-const vrLine = new THREE.Line(vrLineGeo, new THREE.LineBasicMaterial({ color: 0x3fe0ff, transparent: true, opacity: 0.6 }));
-vrLine.scale.setScalar(10);
-vrLine.visible = false;
-scene.add(vrLine);
-const VR_MINUS_Z = new THREE.Vector3(0, 0, -1);
-
-function aimVrLine(p) {
-  vrLine.position.copy(p.origin);
-  vrLine.quaternion.setFromUnitVectors(VR_MINUS_Z, p.dir);
-  vrLine.scale.setScalar(p.len);
-  vrLine.visible = true;
-}
-
-function pickVR() {
-  const c = controllers[0];
-  if (!renderer.xr.isPresenting || !c || !c.visible) { vrLine.visible = false; vrPoints = []; return; }
-  const origin = c.position;
-  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
-  raycasterVr.set(origin, dir);
-  const hits = raycasterVr.intersectObjects(atomGroups(), true);
-  vrPoints = hits;
-  if (vrPoints.length) {
-    const hit = vrPoints[0];
-    aimVrLine({ origin, dir, len: hit.distance });
-    vrLine.material.color.setHex(0xffcf5c);
-    const node = nodeOf(hit.object);
-    if (hoverNode !== node) { hoverNode = node; refreshVisual(); }
-  } else {
-    aimVrLine({ origin, dir, len: 12 });
-    vrLine.material.color.setHex(0x3fe0ff);
-    if (hoverNode) { hoverNode = null; refreshVisual(); }
-  }
-}
-
-xrBtn.addEventListener('click', async () => {
-  if (renderer.xr.isPresenting) {
-    await renderer.xr.endSession();
-    return;
-  }
-  try {
-    const session = await navigator.xr.requestSession('immersive-vr', {
-      optionalFeatures: ['local-floor', 'bounded-floor'],
-    });
-    await renderer.xr.setSession(session);
-  } catch (err) {
-    console.warn('XR session failed:', err);
-    xrBtn.textContent = 'XR unavailable';
-  }
-});
 
 // ---------------------------------------------------------------------------
 //  Animation loop
@@ -807,10 +525,10 @@ let frames = 0, fpsClock = performance.now();
 
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  orbitAtoms(dt);
+  for (const n of elementNodeList) orbitAtom(n.atom, dt);
   stepCamera(dt);
   refreshVisual();
-  pickVR();
+  updateHover(classify(vrRig.pick(pickTargets)));
   if (renderer.xr.isPresenting) hint.classList.add('hidden');
 
   frames++;
@@ -822,18 +540,6 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// orbit all electron shells (shared across nodes) — batched into one pass
-function orbitAtoms(dt) {
-  for (const n of elementNodeList) {
-    for (const child of n.atom.children) {
-      if (child.userData && child.userData.speed) {
-        child.rotation.z += dt * child.userData.speed;
-        child.rotation.x = child.userData.tilt;
-      }
-    }
-  }
-}
-
 function resize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -842,8 +548,8 @@ function resize() {
 window.addEventListener('resize', resize);
 
 panelClose.addEventListener('click', hideDetail);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !locked) hideDetail(); });
-window.addEventListener('blur', () => keys.clear());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !controls.locked) hideDetail(); });
+window.addEventListener('blur', () => controls.keys.clear());
 
 // ---------------------------------------------------------------------------
 //  Boot
@@ -851,9 +557,8 @@ window.addEventListener('blur', () => keys.clear());
 loadingEl.classList.add('hidden');
 setTimeout(() => loadingEl.remove(), 900);
 document.getElementById('sub').textContent =
-  `${ELEMENTS.length} atoms · ${ELEMENT_CATEGORIES.length} families · free flight · WebXR`;
+  `${ELEMENTS.length} atoms · ${window.ELEMENT_CATEGORIES.length} families · free flight · WebXR`;
 
-setupXR();
 infoCard = buildInfoCard();
 renderer.setAnimationLoop(animate);
 resize();
@@ -868,7 +573,9 @@ window.RPRoom = {
   selected: () => (currentNode ? currentNode.el.n : null),
   matchedCount: () => elementNodeList.filter((n) => n.g.visible).length,
   camPos: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z }),
-  cameraIdle: () => !tween && !locked,
+  cameraIdle: () => !tween && !controls.locked,
   grid: () => ({ colW: COL_W, rowH: ROW_H }),
+  portalVisible: () => elementNodeList.filter((n) => n.portal && n.portal.visible).length,
+  roomHref: (n) => { const node = elementNodes.get(n); return node ? roomHref(node.el) : null; },
   selectByNumber(n) { const node = elementNodes.get(n); if (node) focusElement(node); return !!node; },
 };

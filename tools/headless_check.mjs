@@ -399,6 +399,58 @@ async function main() {
   })()`);
   await evalExpr('new Promise(r => setTimeout(r, 1200))');
 
+  // ------------------------------------------------------------------
+  //  PT-T3 additions — per-element rooms
+  // ------------------------------------------------------------------
+
+  // main room: selecting Oganesson reveals its 3D portal + panel room link
+  await waitFor(async () => (await evalExpr('window.RPRoom.selected()')) === 118, 20000, '118 selected');
+  results.rooms = {};
+  results.rooms.main = await evalExpr(`(() => {
+    const a = document.querySelector('#panel .room-link');
+    return {
+      selected: window.RPRoom.selected(),
+      portalVisible: window.RPRoom.portalVisible(),
+      panelVisible: !document.getElementById('panel').classList.contains('hidden'),
+      panelHasOg: (document.getElementById('panel').innerText || '').includes('Oganesson'),
+      panelLinkHref: a ? a.getAttribute('href') : null,
+    };
+  })()`);
+
+  // enter Oganesson's own room and check it built
+  const baseUrl = URL.endsWith('/') ? URL : URL + '/';
+  const roomUrl = baseUrl + 'rooms/118-oganesson.html';
+  await send('Page.navigate', { url: roomUrl });
+  await waitFor(async () => (await evalExpr('!!window.RPRoom')) === true, 30000, 'room page built');
+  await waitFor(async () => (await evalExpr('!document.getElementById("loading")')) === true, 15000, 'room loading gone');
+  results.rooms.page = await evalExpr(`(() => {
+    const b = document.getElementById('back');
+    return {
+      href: location.pathname.split('/').pop(),
+      title: document.title || '',
+      element: window.RPRoom.element,
+      cat: window.RPRoom.cat,
+      shellsDrawn: window.RPRoom.shellsDrawn(),
+      door: window.RPRoom.doorPresent(),
+      back: b ? b.getAttribute('href') : null,
+      loadingGone: !document.getElementById('loading'),
+    };
+  })()`);
+
+  // focusing the atom opens the room's own panel with a back link
+  await evalExpr('window.RPRoom.focusAtom()');
+  await waitFor(async () => (await evalExpr('window.RPRoom.cameraIdle()')) === true, 20000, 'room focus tween');
+  results.rooms.panel = await evalExpr(`(() => {
+    const body = document.getElementById('panel-body');
+    const a = body.querySelector('.room-link');
+    return {
+      visible: !document.getElementById('panel').classList.contains('hidden'),
+      hasOg: (body.innerText || '').includes('Oganesson'),
+      hasNumber: (body.innerText || '').includes('118'),
+      backHref: a ? a.getAttribute('href') : null,
+    };
+  })()`);
+
   console.log(JSON.stringify(results, null, 2));
   console.log('ERRORS:', errors.length ? errors : '(none)');
   if (chromeErr.includes('FATAL')) console.log('CHROME FATAL detected');
@@ -451,7 +503,25 @@ async function main() {
     && check('panelClose: closes panel + deselects (hides hologram)', results.panelClose?.hidden === true && results.panelClose?.selected === null)
     && check('xr: visible, disabled, "XR unavailable" text', results.xrFinal?.visible === true && results.xrFinal?.disabled === true && /XR unavailable/.test(results.xrFinal?.text || ''))
     && check('xr: disabled click is a no-op, hint stays hidden', results.xrFinal?.clickStable === true && results.xrFinal?.hintHidden === true)
-    && check('final: Oganesson(118) selected', results.finalSelected === 118);
+    && check('final: Oganesson(118) selected', results.finalSelected === 118)
+    && check('rooms: selecting Og shows 3D portal + panel room link',
+        results.rooms?.main?.portalVisible === 1
+        && results.rooms?.main?.panelVisible === true
+        && results.rooms?.main?.panelHasOg === true
+        && results.rooms?.main?.panelLinkHref === 'rooms/118-oganesson.html')
+    && check('rooms: Oganesson room page builds (element + atom + door + back)',
+        results.rooms?.page?.element?.n === 118
+        && results.rooms?.page?.element?.s === 'Og'
+        && results.rooms?.page?.element?.name === 'Oganesson'
+        && (results.rooms?.page?.shellsDrawn || 0) > 0
+        && results.rooms?.page?.door === true
+        && results.rooms?.page?.back === '../index.html'
+        && results.rooms?.page?.loadingGone === true)
+    && check('rooms: focusing the atom opens its panel with a back link',
+        results.rooms?.panel?.visible === true
+        && results.rooms?.panel?.hasOg === true
+        && results.rooms?.panel?.hasNumber === true
+        && results.rooms?.panel?.backHref === '../index.html');
 
   const passed = checkResults.filter((c) => c.ok).length;
   const failed = checkResults.filter((c) => !c.ok).length;

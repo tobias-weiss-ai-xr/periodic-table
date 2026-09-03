@@ -121,6 +121,22 @@ html, body {
 .peeknote { font-family: var(--mono); font-size: 12px; color: var(--accent); margin: 8px 0 0; }
 .cite { color: #6f7891; font-size: 11.5px; font-style: italic; margin-top: 10px; }
 
+/* ---------- "Enter its room" link inside the detail panel ---------- */
+.room-link {
+  display: block; margin-top: 14px; text-align: center;
+  font-family: var(--mono); font-size: 12.5px; letter-spacing: .04em;
+  color: var(--accent); text-decoration: none;
+  padding: 10px 14px; border-radius: 12px;
+  border: 1px solid rgba(63,224,255,.4);
+  background: linear-gradient(120deg, rgba(63,224,255,.12), rgba(126,168,255,.12));
+  transition: all .18s ease;
+}
+.room-link:hover {
+  background: linear-gradient(120deg, var(--accent), #7ea8ff);
+  color: #04121a; box-shadow: 0 6px 24px rgba(63,224,255,.3);
+  transform: translateY(-1px);
+}
+
 /* ---------- XR button ---------- */
 #xr {
   position: fixed; bottom: 26px; right: 26px; z-index: 20;

@@ -38,4 +38,10 @@ else:
 PY
 
 export CHROME
+
+echo "run-tests: data suite…"
+python tests/data_suite.py
+echo "run-tests: room suite…"
+python tests/rooms_suite.py
+
 node tools/headless_check.mjs "http://127.0.0.1:$PORT/"

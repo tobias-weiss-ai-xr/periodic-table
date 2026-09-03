@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Tantalum's room — The Periodic Table Room</title>
+  <meta name="description" content="Tantalum — Transition metal, atomic number 73. A walkable 3D room with a live Bohr atom model, facts and a WebXR option." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Ccircle%20cx%3D%2716%27%20cy%3D%2716%27%20r%3D%275%27%20fill%3D%27%2305060a%27%20stroke%3D%27Transition%20metal%27%20stroke-width%3D%272%27/%3E%3Ccircle%20cx%3D%2716%27%20cy%3D%2716%27%20r%3D%274%27%20fill%3D%27%234da6ff%27/%3E%3Cellipse%20cx%3D%2716%27%20cy%3D%2716%27%20rx%3D%2713%27%20ry%3D%275.5%27%20fill%3D%27none%27%20stroke%3D%27Transition%20metal%27%20stroke-width%3D%271.6%27%20transform%3D%27rotate%28-24%2016%2016%29%27/%3E%3Cellipse%20cx%3D%2716%27%20cy%3D%2716%27%20rx%3D%2713%27%20ry%3D%275.5%27%20fill%3D%27none%27%20stroke%3D%27%234da6ff%27%20stroke-width%3D%271.6%27%20transform%3D%27rotate%2834%2016%2016%29%27/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <link rel="stylesheet" href="../assets/room.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="room"></canvas>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Building Tantalum's room…</div>
+  </div>
+
+  <header id="hud">
+    <h1><span class="room-symbol" style="color:Transition metal">Ta</span> Tantalum's room</h1>
+    <p class="sub" id="sub">atomic number 73 · Transition metal</p>
+  </header>
+
+  <a id="back" href="../index.html" title="Back to the full periodic table room">← Periodic Table Room</a>
+
+  <aside id="panel" class="hidden">
+    <button id="panel-close" title="Close" aria-label="Close">×</button>
+    <div id="panel-body">
+      <p class="peeknote">Walk the room — the atom is life-sized to this room. Click it to focus.</p>
+    </div>
+  </aside>
+
+  <button id="xr" class="hidden" type="button">Enter XR</button>
+
+  <footer id="hint">
+    <span>click to look around</span> · <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly</span> ·
+    <span><kbd>Space</kbd> up</span> · <span><kbd>Shift</kbd> down</span> · <span><kbd>Ctrl</kbd> sprint</span> ·
+    <span>click the atom to focus</span> · <span>walk through the ring to return</span> · <span><kbd>Esc</kbd> release</span>
+  </footer>
+  <div id="xr-hint" class="hidden">In VR: move with the left stick, point &amp; trigger to select.</div>
+
+  <div id="fps"></div>
+
+  <!-- this single element's record (generated; matches docs/assets/elements-data.js) -->
+  <script>window.ROOM_ELEMENT = {"n":73,"s":"Ta","name":"Tantalum","x":5,"row":6,"cat":"transition metal","c":"4da6ff","m":180.947882,"sh":[2,8,18,32,11,2],"phase":"Solid","melt":3290,"boil":5731,"dens":16.69,"en":1.5,"esem":"[Xe] 4f14 5d3 6s2","sum":"Tantalum is a chemical element with symbol Ta and atomic number 73. Previously known as tantalium, its name comes from Tantalus, an antihero from Greek mythology. Tantalum is a rare, hard, blue-gray, lustrous transition metal that is highly corrosion-resistant"};</script>
+  <script type="module" src="../assets/room.js"></script>
+</body>
+</html>
