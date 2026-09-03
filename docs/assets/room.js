@@ -30,10 +30,10 @@ const el = window.ROOM_ELEMENT;
 //  Room parameters — a grand airy hall: monument in the middle, five
 //  learning stations on a circle around it.
 // ---------------------------------------------------------------------------
-const W = 46, D = 38, H = 28;            // room extents (walls ±W/2, ±D/2, top H)
+const W = 54, D = 46, H = 30;            // room extents (walls ±W/2, ±D/2, top H)
 const ATOM_SCALE = 3.0;                  // how big the atom is in here
 const ATOM_Y = 12.5;                     // atom centre height
-const STATION_R = 14.5;                  // learning-station ring radius
+const STATION_R = 18;                    // learning-station ring radius
 const CAT = catHex(el.cat);
 
 // ---------------------------------------------------------------------------
@@ -47,11 +47,11 @@ renderer.xr.enabled = true;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05060a);
-scene.fog = new THREE.Fog(0x05060a, 30, 95);
+scene.fog = new THREE.Fog(0x05060a, 36, 115);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 240);
 camera.rotation.order = 'YXZ';
-camera.position.set(0, 7.5, 16.5);
+camera.position.set(0, 9, 21);
 camera.lookAt(0, 10.5, 0);
 
 scene.add(new THREE.AmbientLight(0x44506e, 0.9));
@@ -89,7 +89,7 @@ scene.add(buildRoomShell({
 const watermark = makeLabel(el.s, { color: catHex(el.cat), size: 220, scale: 0.045 });
 watermark.material.opacity = 0.13;
 watermark.material.depthTest = true;
-watermark.position.set(0, 16.5, -D / 2 + 0.6);
+watermark.position.set(0, 19.5, -D / 2 + 0.6);
 scene.add(watermark);
 
 // two-tier pedestal under the atom
@@ -104,7 +104,7 @@ pedestalTop.position.set(0, 1.95, 0);
 scene.add(pedestalTop);
 
 // floor mandala — concentric category-coloured rings radiating from the monument
-[[8, 0.35], [11, 0.22], [14, 0.12]].forEach(([r, op], i) => {
+[[9, 0.35], [12.5, 0.22], [16, 0.12]].forEach(([r, op], i) => {
   const ringMesh = new THREE.Mesh(
     new THREE.RingGeometry(r - 0.05, r + 0.05, 96),
     new THREE.MeshBasicMaterial({ color: catColor(el.cat), transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false })
@@ -138,7 +138,7 @@ scene.add(atom);
 // ---------------------------------------------------------------------------
 const factCard = createCardSprite({ width: 760, height: 300, scale: [5.6, 2.2, 1] });
 paintElementCard(factCard, el);
-factCard.position.set(13, 16, 7);
+factCard.position.set(14, 18.5, 4);
 scene.add(factCard);
 
 function wrap(text, n) {
@@ -152,10 +152,11 @@ function wrap(text, n) {
   return lines;
 }
 
+let sumCard = null;
 if (el.sum) {
-  const sumCard = createCardSprite({ width: 620, height: 300, scale: [4.7, 2.3, 1] });
+  sumCard = createCardSprite({ width: 620, height: 300, scale: [4.7, 2.3, 1] });
   paintTextCard(sumCard, { title: `about ${el.name}`, titleColor: '#3fe0ff', lines: wrap(el.sum, 54) });
-  sumCard.position.set(5.5, 8, 13.5);
+  sumCard.position.set(20, 13, -2);
   scene.add(sumCard);
 }
 
@@ -171,6 +172,7 @@ const STATION_DEFS = [
 ];
 
 const stations = [];
+const stationExtras = [];   // content sprites/meshes that belong to a station
 const quizPanel = buildQuizPanel({ color: '#ff5c8a', position: [0, 8, 0] });
 
 STATION_DEFS.forEach((def, i) => {
@@ -185,14 +187,20 @@ STATION_DEFS.forEach((def, i) => {
     // a raised stand carrying the real lattice / molecular model
     const stand = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, 3.4, 32), pedestalMat);
     stand.position.set(pos[0], 1.7, pos[2]);
+    stand.userData.stationIdx = i;
+    stationExtras.push(stand);
     scene.add(stand);
     const lattice = buildLattice({ type: el.mo.t, color: '#' + el.c, extent: 2.6, radius: 0.3 });
     lattice.position.set(pos[0], 5.6, pos[2]);
+    lattice.userData.stationIdx = i;
+    stationExtras.push(lattice);
     scene.add(lattice);
     entry.model = lattice;
     const capCard = createCardSprite({ width: 640, height: 200, scale: [4.8, 1.5, 1] });
     paintTextCard(capCard, { title: `how ${el.s} arranges`, titleColor: def.color, lines: [el.mo.c] });
     capCard.position.set(pos[0], 9.0, pos[2]);
+    capCard.userData.stationIdx = i;
+    stationExtras.push(capCard);
     scene.add(capCard);
   } else if (def.key === 'quiz') {
     quizPanel.g.position.set(pos[0], 8, pos[2]);
@@ -204,6 +212,8 @@ STATION_DEFS.forEach((def, i) => {
       new THREE.MeshStandardMaterial({ color: 0x0a0f1c, roughness: 0.7, metalness: 0.3, emissive: new THREE.Color(def.color), emissiveIntensity: 0.25 })
     );
     col.position.set(pos[0], 3.45, pos[2]);
+    col.userData.stationIdx = i;
+    stationExtras.push(col);
     scene.add(col);
     const card = createCardSprite({ width: 700, height: 380, scale: [5.2, 2.8, 1] });
     let lines;
@@ -212,6 +222,8 @@ STATION_DEFS.forEach((def, i) => {
     else lines = wrap(el.xp, 46);
     paintTextCard(card, { title: def.title, titleColor: def.color, lines });
     card.position.set(pos[0], 8.6, pos[2]);
+    card.userData.stationIdx = i;
+    stationExtras.push(card);
     scene.add(card);
   }
   stations.push(entry);
@@ -301,12 +313,12 @@ const door = buildDoor({
   sub: '<- return to the 118-element gallery',
   color: '#3fe0ff', scale: 2.2, opacity: 0.9,
 });
-door.position.set(-10.5, 7.4, -D / 2 + 1.4);
+door.position.set(-17, 7.4, -D / 2 + 1.4);
 scene.add(door);
 door.traverse((o) => { if (o.isSprite) o.raycast = () => {}; });
 
 const doorTag = makeLabel(`EXIT - GALLERY`, { color: '#5d6884', size: 26, scale: 0.008 });
-doorTag.position.set(-10.5, 11.6, -D / 2 + 1.6);
+doorTag.position.set(-17, 11.6, -D / 2 + 1.6);
 scene.add(doorTag);
 
 // ---------------------------------------------------------------------------
@@ -328,8 +340,8 @@ const controls = createFreeFlight({
 // ---------------------------------------------------------------------------
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2(0, 0);
-const pickTargets = () => [atom, door, ...stations.map((s) => s.disc), ...quizPanel.boxes, quizPanel.nextBox];
-const priorityTargets = () => [door, quizPanel.nextBox, ...quizPanel.boxes, ...stations.map((s) => s.disc)];
+const pickTargets = () => [atom, door, ...stations.map((s) => s.disc), ...stationExtras, ...quizPanel.boxes, quizPanel.nextBox];
+const priorityTargets = () => [...stationExtras, quizPanel.nextBox, ...quizPanel.boxes, ...stations.map((s) => s.disc), door];
 
 function partOf(obj, group) {
   let p = obj;
@@ -346,7 +358,10 @@ function pick(e) {
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
   }
-  // interactive targets win over the big atom hologram in the middle
+  // station content wins, then the exit door, then the rest — so a click on
+  // a station card never "falls through" to the door behind it
+  const extras = raycaster.intersectObjects(stationExtras, true);
+  if (extras.length) return extras[0].object;
   const doorHits = raycaster.intersectObject(door, true);
   if (doorHits.length) return doorHits[0].object;
   const hits = raycaster.intersectObjects(pickTargets(), true);
@@ -357,7 +372,14 @@ function routePick(hit) {
   if (!hit) { if (!controls.locked && !renderer.xr.isPresenting) controls.requestLock(); return; }
   if (hit.userData.quizAnswer != null) { quizPick(hit.userData.quizAnswer); return; }
   if (hit.userData.quizNext) { quizNext(); return; }
-  if (hit.userData.isStation) { focusStation(hit.userData.stationIdx); return; }
+  // station discs and station content (lattice children too): climb to the
+  // tagged ancestor, then glide to that station
+  for (let p = hit; p; p = p.parent) {
+    if (p.userData.isStation || p.userData.stationIdx != null) {
+      focusStation(p.userData.stationIdx);
+      return;
+    }
+  }
   if (partOf(hit, door)) { location.href = '../index.html'; return; }
   if (partOf(hit, atom)) { focusAtom(); return; }
 }
@@ -374,7 +396,7 @@ function focusStation(i) {
   const st = stations[i];
   if (!st) return;
   const outward = new THREE.Vector3(st.pos[0], 0, st.pos[2]).normalize();
-  const eye = new THREE.Vector3(st.pos[0], 8, st.pos[2]).add(outward.multiplyScalar(7.5));
+  const eye = new THREE.Vector3(st.pos[0], 8, st.pos[2]).add(outward.multiplyScalar(8.5));
   tweenTo(eye, new THREE.Vector3(st.pos[0], 8, st.pos[2]));
 }
 
@@ -404,7 +426,7 @@ function onSessionStart() {
   xrBtn.disabled = false;
   xrHint.classList.remove('hidden');
   hint.classList.add('hidden');
-  camera.position.set(0, 1.6, 13);
+  camera.position.set(0, 1.6, 15);
   camera.lookAt(0, 10, 0);
 }
 function onSessionEnd() {
@@ -507,6 +529,33 @@ window.RPRoom = {
     };
   },
   roomSize: () => ({ w: W, d: D, h: H }),
+  // coarse 3D AABB overlap test across all wall/floating content — keeps the
+  // "cards colliding" bug (e.g. about-Indium vs experiment card) from returning
+  overlaps: () => {
+    const boxes = [
+      { id: 'factCard', p: factCard.position, hw: 2.8, hh: 1.15 },
+      ...(sumCard ? [{ id: 'sumCard', p: sumCard.position, hw: 2.4, hh: 1.2 }] : []),
+      { id: 'door', p: door.position, hw: 2.6, hh: 3.6 },
+      { id: 'watermark', p: watermark.position, hw: 5.5, hh: 5.5 },
+    ];
+    stations.forEach((st, i) => {
+      if (st.key === 'quiz') boxes.push({ id: 'quizPanel', p: quizPanel.g.position, hw: 5.2, hh: 4.6 });
+      else if (st.key === 'model') boxes.push({ id: 'modelCard', p: new THREE.Vector3(st.pos[0], 9.0, st.pos[2]), hw: 2.4, hh: 0.8 });
+      else boxes.push({ id: `card-${st.key}`, p: new THREE.Vector3(st.pos[0], 8.6, st.pos[2]), hw: 2.6, hh: 1.45 });
+    });
+    const bad = [];
+    for (let a = 0; a < boxes.length; a++) {
+      for (let b = a + 1; b < boxes.length; b++) {
+        const A = boxes[a], B = boxes[b];
+        if (Math.abs(A.p.x - B.p.x) < A.hw + B.hw
+          && Math.abs(A.p.y - B.p.y) < A.hh + B.hh
+          && Math.abs(A.p.z - B.p.z) < A.hw + B.hw) {
+          bad.push([A.id, B.id]);
+        }
+      }
+    }
+    return bad;
+  },
   stations: () => stations.length,
   stationInfo: () => stations.map((s) => ({ key: s.key, color: s.color })),
   model: () => ({ type: el.mo.t, caption: el.mo.c }),

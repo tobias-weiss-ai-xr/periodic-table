@@ -488,6 +488,7 @@ async function main() {
   results.rooms.learn = await evalExpr(`(() => ({
     stationCount: window.RPRoom.stations(),
     model: window.RPRoom.model(),
+    overlaps: window.RPRoom.overlaps(),
     quizTotal: window.RPRoom.quizState().total,
     quizCorrectIdx: window.RPRoom.quizState().correctIdx,
   }))()`);
@@ -609,6 +610,9 @@ async function main() {
         && typeof results.rooms?.learn?.model?.caption === 'string'
         && results.rooms.learn.model.caption.length > 0
         && results.rooms?.learn?.quizTotal === 4)
+    && check('rooms: no content overlaps (cards / door / quiz panel)',
+        Array.isArray(results.rooms?.learn?.overlaps)
+        && results.rooms.learn.overlaps.length === 0)
     && check('rooms: quiz gives feedback and advances (retrieval practice)',
         results.rooms?.quizAnswered?.answered === true
         && results.rooms?.quizAnswered?.score === 1

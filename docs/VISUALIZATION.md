@@ -38,12 +38,13 @@ Interactive three.js + WebXR page, served from `/docs` on GitHub Pages.
 ## Per-element rooms (`docs/rooms/`, 118 generated pages)
 
 Each element gets its own **grand learning lab** (`assets/room.js` + one
-generated HTML per element, 46 × 38 × 28 units): a monumental Bohr atom
+generated HTML per element, 54 × 46 × 30 units): a monumental Bohr atom
 (scale 3.0) floating over a two-tier pedestal with a category-coloured floor
 mandala, the element's symbol as giant translucent wall lettering, and
 drifting star dust (`lib/primitives.js → makeStarDust`). Around the monument
-runs a **ring of five numbered learning stations** (consistent colours in all
-118 rooms — click a station disc and the camera glides there):
+runs a wide **ring of five numbered learning stations** (radius 18, consistent
+colours in all 118 rooms — click a station disc, its content card, the model
+or its stand and the camera glides there):
 
 | # | station | colour | content |
 |---|---|---|---|
@@ -54,7 +55,10 @@ runs a **ring of five numbered learning stations** (consistent colours in all
 | 5 | Test yourself | pink | a 4-question quiz with 3 answer boxes, immediate right/wrong feedback and a score — **retrieval practice** generated deterministically from the element data |
 
 The same uses/experiment/history lines also appear in the detail panel
-(`lib/theme.js → elementDetailHTML`), so the gallery teaches too.
+(`lib/theme.js → elementDetailHTML`), so the gallery teaches too. Overview
+cards (facts / summary) float high and wide **outside the station ring** so
+nothing collides — a `RPRoom.overlaps()` AABB guard in the headless E2E
+keeps any future layout change from re-introducing overlapping content.
 
 The **return door** floats beside the atom on the back wall (offset off-axis
 so it is never hidden behind the monument); it is ray-priority-picked, so a
