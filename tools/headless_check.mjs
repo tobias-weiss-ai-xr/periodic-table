@@ -476,10 +476,28 @@ async function main() {
       visible: !document.getElementById('panel').classList.contains('hidden'),
       hasOg: (body.innerText || '').includes('Oganesson'),
       hasNumber: (body.innerText || '').includes('118'),
+      hasUses: (body.innerText || '').includes('USES'),
+      hasExperiment: (body.innerText || '').includes('EXPERIMENT'),
       backHref: a ? a.getAttribute('href') : null,
     };
   })()`);
   results.rooms.layout = await evalExpr('window.RPRoom.roomSize()');
+
+  // learning stations: five stations, an honest crystal/molecule model and a
+  // working retrieval-practice quiz (pick the right answer, then advance)
+  results.rooms.learn = await evalExpr(`(() => ({
+    stationCount: window.RPRoom.stations(),
+    model: window.RPRoom.model(),
+    quizTotal: window.RPRoom.quizState().total,
+    quizCorrectIdx: window.RPRoom.quizState().correctIdx,
+  }))()`);
+  await evalExpr('window.RPRoom.quizPick(window.RPRoom.quizState().correctIdx)');
+  results.rooms.quizAnswered = await evalExpr(`(() => {
+    const qs = window.RPRoom.quizState();
+    return { answered: qs.answered, score: qs.score };
+  })()`);
+  await evalExpr('window.RPRoom.quizNext()');
+  results.rooms.quizAdvanced = await evalExpr('window.RPRoom.quizState().i');
 
   // hide the panel so it cannot cover the door, then really CLICK the
   // in-world return door -> must navigate back to the gallery
@@ -576,12 +594,25 @@ async function main() {
         results.rooms?.panel?.visible === true
         && results.rooms?.panel?.hasOg === true
         && results.rooms?.panel?.hasNumber === true
+        && results.rooms?.panel?.hasUses === true
+        && results.rooms?.panel?.hasExperiment === true
         && results.rooms?.panel?.backHref === '../index.html')
     && check('rooms: clicking the 3D portal enters the element\'s room',
         results.rooms?.page?.enteredByPortalClick === true)
     && check('rooms: clicking the in-world door returns to the gallery',
         results.rooms?.returnedByDoorClick === true
-        && results.rooms?.layout?.w >= 34 && results.rooms?.layout?.h >= 22)
+        && results.rooms?.layout?.w >= 44 && results.rooms?.layout?.d >= 36)
+    && check('rooms: 5 learning stations + honest crystal model + panel extras',
+        results.rooms?.learn?.stationCount === 5
+        && typeof results.rooms?.learn?.model?.type === 'string'
+        && results.rooms.learn.model.type.length > 0
+        && typeof results.rooms?.learn?.model?.caption === 'string'
+        && results.rooms.learn.model.caption.length > 0
+        && results.rooms?.learn?.quizTotal === 4)
+    && check('rooms: quiz gives feedback and advances (retrieval practice)',
+        results.rooms?.quizAnswered?.answered === true
+        && results.rooms?.quizAnswered?.score === 1
+        && results.rooms?.quizAdvanced === 1)
     && check('rooms: #back anchor works from another room (001-hydrogen)',
         results.rooms?.hydrogen?.element?.n === 1
         && results.rooms?.hydrogen?.back === '../index.html');

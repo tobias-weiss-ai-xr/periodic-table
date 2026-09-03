@@ -156,13 +156,43 @@ class RoomsSuite(unittest.TestCase):
 
     def test_room_js_uses_shared_lib(self):
         room = ROOM_JS.read_text(encoding="utf-8")
-        for mod in ("util.js", "theme.js", "primitives.js", "controls.js", "xr.js", "shell.js", "infocard.js"):
+        for mod in ("util.js", "theme.js", "primitives.js", "controls.js", "xr.js", "shell.js", "infocard.js", "learn.js"):
             self.assertIn(f"./lib/{mod}", room, f"room.js does not import ./lib/{mod}")
 
+    def test_room_js_declares_five_learning_stations(self):
+        room = ROOM_JS.read_text(encoding="utf-8")
+        for key in ("model", "uses", "history", "experiment", "quiz"):
+            self.assertIn(f"key: '{key}'", room, f"learning station '{key}' missing in room.js")
+        for hook in ("buildLattice", "buildQuizPanel", "quizPick", "quizNext", "focusStation"):
+            self.assertIn(hook, room, f"learning hook '{hook}' missing in room.js")
+
     def test_lib_modules_exist(self):
-        expected = {"util.js", "theme.js", "primitives.js", "controls.js", "xr.js", "shell.js", "infocard.js"}
+        expected = {"util.js", "theme.js", "primitives.js", "controls.js", "xr.js", "shell.js", "infocard.js", "learn.js"}
         present = {p.name for p in LIB.glob("*.js")}
         self.assertEqual(expected, present, "missing/extra lib modules")
+
+    def test_every_page_embeds_learning_content(self):
+        """Mayer-style stations data must reach every generated room page."""
+        problems = []
+        for page in self.files:
+            rec = parse_room_element(page.read_text(encoding="utf-8"))
+            if not (isinstance(rec.get("u"), list) and rec["u"]):
+                problems.append(f"{page.name}: uses (u)")
+            for field in ("xp", "pn"):
+                if not rec.get(field):
+                    problems.append(f"{page.name}: {field}")
+            mo = rec.get("mo") or {}
+            if mo.get("t") not in {"atom", "dumbbell", "tetra", "ring8", "sc", "bcc", "fcc", "hcp", "diamond"}:
+                problems.append(f"{page.name}: model type {mo.get('t')!r}")
+            if not mo.get("c"):
+                problems.append(f"{page.name}: model caption")
+        self.assertEqual(problems, [], "pages with missing learning content")
+
+    def test_element_content_covers_all_elements(self):
+        build = load_build_module(DATA_BUILD, "build_elements_data")
+        ec = load_build_module(build.ROOT / "scripts" / "element_content.py", "element_content")
+        missing = [e["s"] for e in self.canon if e["s"] not in ec.CONTENT or e["s"] not in ec.MODEL]
+        self.assertEqual(missing, [], "symbols missing curated content")
 
     def test_index_mentions_element_rooms(self):
         idx = INDEX_HTML.read_text(encoding="utf-8")

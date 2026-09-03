@@ -16,12 +16,19 @@ Output: docs/assets/elements-data.js   (window.ELEMENTS, window.ELEMENT_CATEGORI
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+_ROOT = Path(__file__).resolve().parent
+ROOT = _ROOT.parent
 SRC = ROOT / "docs/assets/elements.json"
 OUT = ROOT / "docs/assets/elements-data.js"
 ROOMS = ROOT / "docs/rooms"
+# allow import when loaded via importlib spec (tests/) without a path setup
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from element_content import get_content  # noqa: E402  (same directory)
 
 # Normalise verbose bowserinator category strings to stable keys
 CATEGORY_ALIASES = {
@@ -108,6 +115,11 @@ def build_compact() -> tuple[list[dict], list[list[str]]]:
         }
         for e in els
     ]
+
+    # merge curated learning-station content (uses / experiment / person /
+    # crystal-model) so every consumer gets byte-identical records
+    for rec in compact:
+        rec.update(get_content(rec["s"]))
 
     cats = [[key, label] for key, label in CATEGORY_ORDER if key in normalised]
     # any category not in the ordered list (should not happen) appended at the end

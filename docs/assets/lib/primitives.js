@@ -208,3 +208,145 @@ export function makeStarDust(opts = {}) {
   pts.userData.isDust = true;
   return pts;
 }
+
+// ---------------------------------------------------------------------------
+//  buildLattice — small, honest 3D models of how a pure element arranges
+//  itself. Powers the "crystal & molecule" learning station in element rooms.
+//  Types: atom | dumbbell | tetra | ring8 | sc | bcc | fcc | hcp | diamond
+// ---------------------------------------------------------------------------
+const CUBE = [
+  [0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
+  [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1],
+];
+const CUBE_EDGES = [
+  [0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3],
+  [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7],
+];
+function hexRing(r, y, phaseDeg, out, startIdx) {
+  for (let k = 0; k < 6; k++) {
+    const a = ((phaseDeg + k * 60) * Math.PI) / 180;
+    out.push([Math.cos(a) * r, y, Math.sin(a) * r]);
+  }
+  return startIdx + 6;
+}
+function latticePoints(type) {
+  const pts = [];
+  const bonds = [];
+  const cubeFace = (i) => pts.push(CUBE[i]);
+  switch (type) {
+    case 'atom':
+      pts.push([0, 0, 0]);
+      break;
+    case 'dumbbell':
+      pts.push([-0.55, 0, 0], [0.55, 0, 0]);
+      bonds.push([0, 1]);
+      break;
+    case 'tetra':
+      pts.push([0.55, 0.55, 0.55], [0.55, -0.55, -0.55], [-0.55, 0.55, -0.55], [-0.55, -0.55, 0.55]);
+      bonds.push([0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]);
+      break;
+    case 'ring8': {
+      for (let k = 0; k < 8; k++) {
+        const a = (k * 45 * Math.PI) / 180;
+        pts.push([Math.cos(a) * 0.8, k % 2 ? 0.14 : -0.14, Math.sin(a) * 0.8]);
+      }
+      for (let k = 0; k < 8; k++) bonds.push([k, (k + 1) % 8]);
+      break;
+    }
+    case 'sc':
+      CUBE.forEach(cubeFace);
+      bonds.push(...CUBE_EDGES);
+      break;
+    case 'bcc':
+      CUBE.forEach(cubeFace);
+      pts.push([0.5, 0.5, 0.5]);
+      bonds.push([0, 7], [1, 6], [2, 5], [3, 4]);
+      break;
+    case 'fcc': {
+      CUBE.forEach(cubeFace);
+      pts.push([1, 0.5, 0.5], [0, 0.5, 0.5], [0.5, 1, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 1], [0.5, 0.5, 0]);
+      const fc = (ci, fi) => bonds.push([ci, fi]);
+      [1, 3, 5, 7].forEach((c) => fc(c, 8));   // +x face
+      [0, 2, 4, 6].forEach((c) => fc(c, 9));   // -x
+      [2, 3, 6, 7].forEach((c) => fc(c, 10));  // +y
+      [0, 1, 4, 5].forEach((c) => fc(c, 11));  // -y
+      [4, 5, 6, 7].forEach((c) => fc(c, 12));  // +z
+      [0, 1, 2, 3].forEach((c) => fc(c, 13));  // -z
+      break;
+    }
+    case 'diamond': {
+      CUBE.forEach(cubeFace);
+      pts.push([1, 0.5, 0.5], [0, 0.5, 0.5], [0.5, 1, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 1], [0.5, 0.5, 0]);
+      pts.push([0.25, 0.25, 0.25], [0.75, 0.75, 0.25], [0.75, 0.25, 0.75], [0.25, 0.75, 0.75]);
+      bonds.push([14, 0], [14, 9], [14, 11], [14, 13]);
+      bonds.push([15, 7], [15, 8], [15, 10], [15, 13]);
+      bonds.push([16, 5], [16, 8], [16, 11], [16, 12]);
+      bonds.push([17, 6], [17, 9], [17, 10], [17, 12]);
+      break;
+    }
+    case 'hcp': {
+      pts.push([0, 0, 0]);                    // 0  bottom centre
+      hexRing(1, 0, 0, pts, 1);               // 1..6 bottom ring (0deg..)
+      hexRing(1, 0.8, 30, pts, 7);            // 7..9 middle triangle
+      pts.push([0, 1.6, 0]);                  // 10 top centre
+      hexRing(1, 1.6, 0, pts, 11);            // 11..16 top ring
+      for (const base of [1, 11]) {
+        for (let k = 0; k < 6; k++) {
+          bonds.push([base, base + 1 + k]);
+          bonds.push([base + 1 + k, base + 1 + ((k + 1) % 6)]);
+        }
+      }
+      bonds.push([7, 8], [8, 9], [9, 7]);
+      bonds.push([7, 1], [7, 2], [8, 3], [8, 4], [9, 5], [9, 6]);
+      bonds.push([7, 11], [7, 12], [8, 13], [8, 14], [9, 15], [9, 16]);
+      break;
+    }
+    default:
+      pts.push([0, 0, 0]);
+  }
+  return { pts, bonds };
+}
+
+export function buildLattice({ type = 'atom', color = '#3fe0ff', extent = 2.4, radius = 0.3 } = {}) {
+  const { pts, bonds } = latticePoints(type);
+  const g = new THREE.Group();
+  const sphGeo = new THREE.SphereGeometry(radius, 20, 14);
+  const sphMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color), roughness: 0.35, metalness: 0.55,
+    emissive: new THREE.Color(color), emissiveIntensity: 0.08,
+  });
+  const bondGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 6);
+  const bondMat = new THREE.MeshStandardMaterial({ color: 0x8a94ad, roughness: 0.6, metalness: 0.3 });
+  const up = new THREE.Vector3(0, 1, 0);
+  const dir = new THREE.Vector3();
+  const scale = type === 'atom' ? radius * 2.2 : extent;
+  for (const p of pts) {
+    const m = new THREE.Mesh(sphGeo, sphMat);
+    m.position.set(p[0] * scale, p[1] * scale, p[2] * scale);
+    g.add(m);
+  }
+  for (const [a, b] of bonds) {
+    const pa = new THREE.Vector3(...pts[a]).multiplyScalar(scale);
+    const pb = new THREE.Vector3(...pts[b]).multiplyScalar(scale);
+    const mid = pa.clone().add(pb).multiplyScalar(0.5);
+    const len = pa.distanceTo(pb);
+    const cyl = new THREE.Mesh(bondGeo, bondMat);
+    cyl.position.copy(mid);
+    cyl.scale.y = len;
+    dir.subVectors(pb, pa).normalize();
+    cyl.quaternion.setFromUnitVectors(up, dir);
+    g.add(cyl);
+  }
+  if (type === 'atom') {
+    const glow = makeGlow(color, scale * 3.2);
+    glow.material.opacity = 0.5;
+    g.add(glow);
+  }
+  // centre the model around its own origin so it sits nicely on a stand
+  const box = new THREE.Box3().setFromObject(g);
+  const centre = box.getCenter(new THREE.Vector3());
+  g.children.forEach((c) => c.position.sub(centre));
+  g.userData.isLattice = true;
+  g.userData.latticeType = type;
+  return g;
+}

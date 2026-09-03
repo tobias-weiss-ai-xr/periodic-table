@@ -65,6 +65,11 @@ export function elementDetailHTML(el) {
       <dt>electronegativity</dt><dd>${fmt(el.en, 3)}</dd>
     </dl>
     ${el.sum ? `<p class="lead">${el.sum}</p>` : ''}
+    ${el.u ? `<div class="learn-block">
+      <p class="learn-line"><span class="learn-tag" style="color:#ffcf5c">USES</span> ${el.u.join(' · ')}</p>
+      <p class="learn-line"><span class="learn-tag" style="color:#5cff9d">EXPERIMENT</span> ${el.xp}</p>
+      <p class="learn-line"><span class="learn-tag" style="color:#b18cff">HISTORY</span> ${el.pn}</p>
+    </div>` : ''}
     <p class="cite">Data: Bowserinator/Periodic-Table-JSON · visualisation: The Periodic Table Room</p>
   `;
 }

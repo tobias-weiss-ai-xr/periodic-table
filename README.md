@@ -10,7 +10,7 @@ Live page: **https://tobias-weiss-ai-xr.github.io/periodic-table/** (GitHub Page
 
 - **Fly** the room (`click` to look around, `WASD`/arrow keys to move, `Space`/`Shift` up and down, `Ctrl` to sprint, `Esc` to release the mouse); in VR the headset sets your height and the left thumbstick walks
 - **Click any atom** — the camera glides to it, a detail panel opens (name, symbol, atomic mass, electron shells & configuration, phase, melt/boil points, density, electronegativity, summary), and a **holographic info card floats in front of the element** — readable both on screen *and inside the VR headset*.
-- **Every element has its own room** — select an element and a glowing **portal door** appears above it (plus an *Enter its room →* button in the detail panel); click/trigger it to teleport into that element's dedicated 3D room. Each room is a grand, gallery-style chamber: the element's giant Bohr atom as the monument on a pedestal with a category-coloured floor mandala, its symbol as huge wall lettering, drifting star dust, floating fact cards, free flight + WebXR, and a return portal back to the gallery. 118 rooms live in `docs/rooms/` (deep-linkable, e.g. `rooms/026-iron.html`).
+- **Every element has its own learning lab** — select an element and a glowing **portal door** appears above it (plus an *Enter its room →* button in the detail panel); click/trigger it to teleport into that element's dedicated 3D room. Each room is a grand, airy hall: the element's giant Bohr atom as the monument over a category-coloured floor mandala, its symbol as huge wall lettering, drifting star dust — and a ring of **five numbered learning stations**: ① the element's real crystal/molecular structure as a 3D model (`buildLattice`), ② where you meet it, ③ who found it, ④ the classic experiment, ⑤ a self-check quiz with instant feedback — all designed around Mayer's multimedia-learning principles and retrieval practice. Free flight + WebXR + a return portal to the gallery. 118 rooms live in `docs/rooms/` (deep-linkable, e.g. `rooms/026-iron.html`).
 - **Search** for an element by name, symbol or number (Enter flies to the best match)
 - **Filter by family** via the colour chips (alkali metal, transition metal, lanthanide, …)
 - **Enter XR** (button, bottom right) — full room-scale VR on an `immersive-vr` headset:
@@ -21,12 +21,14 @@ Live page: **https://tobias-weiss-ai-xr.github.io/periodic-table/** (GitHub Page
 
 - [three.js](https://threejs.org/) r160 (CDN, ES modules) + WebXR (`immersive-vr`)
 - Element data: [Bowserinator/Periodic-Table-JSON](https://github.com/Bowserinator/Periodic-Table-JSON)
-  (Bohr `shells`, periodic-table `xpos`/`ypos`, CPK colours) — bundled compactly
+  (Bohr `shells`, periodic-table `xpos`/`ypos`, CPK colours) plus curated
+  learning content for all 118 elements (uses, experiments, discovery notes,
+  crystal structures) in `scripts/element_content.py` — bundled compactly
   by `scripts/build_elements_data.py`
 - **Modular**: the gallery room and the 118 element rooms share one reusable
-  layer in `docs/assets/lib/` (atoms, portals, labels/glows, free-flight
-  controls, WebXR rig, room shell, fact cards) — nothing is copy-pasted
-  between the two apps
+  layer in `docs/assets/lib/` (atoms, portals, lattice models, labels/glows,
+  free-flight controls, WebXR rig, room shell, fact cards, learning
+  stations + quiz) — nothing is copy-pasted between the two apps
 - No build step, no dependencies to install — serve `docs/` and go.
 
 ```

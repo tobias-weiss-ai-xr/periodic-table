@@ -186,3 +186,7 @@ kbd {
   #hint { display: none; }
   #xr { bottom: 18px; right: 14px; }
 }
+
+#panel-body .learn-block { margin-top: 10px; display: grid; gap: 6px; }
+#panel-body .learn-line { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 0; }
+#panel-body .learn-tag { font-weight: 700; letter-spacing: 0.08em; margin-right: 6px; font-size: 10px; }
