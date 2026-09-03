@@ -14,11 +14,12 @@ const ELEMENT_CATEGORIES = window.ELEMENT_CATEGORIES;   // [key, label][]  (data
 // ---------------------------------------------------------------------------
 //  Tuning constants
 // ---------------------------------------------------------------------------
-const COL_W = 2.6, ROW_H = 2.6;      // wall spacing
+const COL_W = 3.4, ROW_H = 3.2;     // element card spacing (roomier wall)
 const WALL_Z = -18;                  // wall plane
-const EYE = 1.6;                     // standing eye height
-const ROOM_MIN = { x: -26, z: -17 }; // walkable bounds
-const ROOM_MAX = { x: 26, z: 23 };
+const WALL_CY = 13;                  // wall centre height
+const EYE = 1.6;                     // headset/standing eye height (VR)
+const ROOM_MIN = { x: -37, z: -17 }; // flyable bounds
+const ROOM_MAX = { x: 37, z: 23 };
 const ELECTRON_CAP = 14;             // max electrons drawn per shell
 const MAX_VR_SHELLS = 4;             // shell cap in VR (lower LOD)
 
@@ -162,7 +163,7 @@ function buildNode(el) {
   const g = new THREE.Group();
   const col = catColor(el.cat);
   const x = (el.x - 9.5) * COL_W;
-  const y = (5 - el.row) * ROW_H + 12; // wall centre at y = 12
+  const y = (5 - el.row) * ROW_H + WALL_CY;
   g.position.set(x, y, WALL_Z);
 
   // frosted glass tile (the "display case")
@@ -352,8 +353,8 @@ scene.fog = new THREE.Fog(0x05060a, 30, 110);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.rotation.order = 'YXZ';
-camera.position.set(0, EYE, 8);
-camera.lookAt(0, 12, WALL_Z);
+camera.position.set(0, 13, 17);       // designer's hero view of the wall
+camera.lookAt(0, 13, WALL_Z);
 
 scene.add(new THREE.AmbientLight(0x44506e, 0.9));
 scene.add(new THREE.HemisphereLight(0x9fc2ff, 0x140f08, 0.6));
@@ -385,10 +386,10 @@ function buildRoom() {
   g.add(grid);
 
   const walls = [
-    [-26, 0, 0, Math.PI / 2, 3, 34],          // left
-    [26, 0, 0, Math.PI / 2, 3, 34],           // right
-    [0, 12, -20, 0, 52, 24],                  // back (behind the table)
-    [0, 24, 0, Math.PI / 2, 52, 43],          // ceiling
+    [-38, 0, 0, Math.PI / 2, 3, 34],          // left
+    [38, 0, 0, Math.PI / 2, 3, 34],           // right
+    [0, 13, -20, 0, 80, 30],                  // back (behind the table)
+    [0, 30, 0, Math.PI / 2, 80, 43],          // ceiling
   ];
   walls.forEach(([x, y, z, rx, w, h]) => {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), dark);
@@ -399,13 +400,13 @@ function buildRoom() {
 
   // wall grid lines behind the periodic table
   const pts = [];
-  for (let c = 0; c <= 18; c++) {
+  for (let c = 1; c <= 18; c++) {
     const x = (c - 9.5) * COL_W;
-    pts.push(new THREE.Vector3(x, -1, -19.4), new THREE.Vector3(x, 24, -19.4));
+    pts.push(new THREE.Vector3(x, -2, -19.4), new THREE.Vector3(x, 29, -19.4));
   }
-  for (let r = 0; r <= 9; r++) {
-    const y = (5 - r) * ROW_H + 12;
-    pts.push(new THREE.Vector3(-10.5, y, -19.4), new THREE.Vector3(10.5, y, -19.4));
+  for (let r = 0; r <= 10; r++) {
+    const y = (5 - r) * ROW_H + WALL_CY;
+    pts.push(new THREE.Vector3(-9.5 * COL_W - 1, y, -19.4), new THREE.Vector3(9.5 * COL_W + 1, y, -19.4));
   }
   const lines = new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints(pts),
@@ -414,14 +415,14 @@ function buildRoom() {
   g.add(lines);
 
   // entrance wall with the room title (behind the viewer)
-  const back2 = new THREE.Mesh(new THREE.PlaneGeometry(52, 24), dark);
-  back2.position.set(0, 12, 24);
+  const back2 = new THREE.Mesh(new THREE.PlaneGeometry(80, 30), dark);
+  back2.position.set(0, 13, 24);
   g.add(back2);
-  const title = makeLabel('THE PERIODIC TABLE ROOM', { color: '#dfe8ff', size: 54 });
-  title.position.set(0, 20.5, 22.6);
+  const title = makeLabel('THE PERIODIC TABLE ROOM', { color: '#dfe8ff', size: 54, scale: 0.009 });
+  title.position.set(0, 24.5, 22.6);
   g.add(title);
-  const sub = makeLabel('118 elements · atom models · WebXR', { color: '#5d6884', size: 30 });
-  sub.position.set(0, 18.4, 22.6);
+  const sub = makeLabel('118 elements · atom models · WebXR · fly freely', { color: '#5d6884', size: 30, scale: 0.008 });
+  sub.position.set(0, 22.3, 22.6);
   g.add(sub);
 
   return g;
@@ -483,7 +484,7 @@ function focusElement(node) {
 
   const tgt = node.g.position;
   const look = new THREE.Vector3(tgt.x, tgt.y, WALL_Z + 0.8);
-  const eye = new THREE.Vector3(tgt.x * 0.72, clamp(tgt.y - 2.2, EYE, 21), WALL_Z + 16);
+  const eye = new THREE.Vector3(tgt.x * 0.72, clamp(tgt.y - 2.2, 3, 27), WALL_Z + 16);
   // if already posed near the wall, only dolly, don't re-fly
   const dist = camera.position.distanceTo(eye);
   if (dist > 26 || tween) {
@@ -495,7 +496,7 @@ function focusElement(node) {
   }
 }
 
-let _lookTarget = new THREE.Vector3(0, 12, WALL_Z);
+let _lookTarget = new THREE.Vector3(0, 13, WALL_Z);
 function getLookAt() { return _lookTarget; }
 function updateLookAtFromCamera() {
   camera.getWorldDirection(_tmpDir);
@@ -565,11 +566,12 @@ document.addEventListener('mousemove', (e) => {
   camera.rotation.y -= e.movementX * 0.0022;
   camera.rotation.x = clamp(camera.rotation.x - e.movementY * 0.0022, -1.35, 1.35);
 });
+const keySym = (e) => (e.code === 'Space' ? 'space' : e.key.toLowerCase());
 document.addEventListener('keydown', (e) => {
-  keys.add(e.code.toLowerCase());
+  keys.add(keySym(e));
   if (e.code === 'Space' && locked) e.preventDefault();
 });
-document.addEventListener('keyup', (e) => keys.delete(e.code.toLowerCase()));
+document.addEventListener('keyup', (e) => keys.delete(keySym(e)));
 
 function stepCamera(dt) {
   if (tween) {
@@ -584,14 +586,16 @@ function stepCamera(dt) {
   const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
   dir.y = 0; dir.normalize();
   const right = new THREE.Vector3(-dir.z, 0, dir.x);
-  const sprint = moveState.sprint || keys.has('shift');
+  const sprint = moveState.sprint || keys.has('control');
   const speed = (sprint ? 11 : 5.2);
   const move = new THREE.Vector3();
-  // keyboard
+  // keyboard — free flight (no gravity outside VR)
   if (keys.has('w') || keys.has('arrowup')) move.addScaledVector(dir, speed * dt);
   if (keys.has('s') || keys.has('arrowdown')) move.addScaledVector(dir, -speed * dt);
   if (keys.has('a') || keys.has('arrowleft')) move.addScaledVector(right, -speed * dt);
   if (keys.has('d') || keys.has('arrowright')) move.addScaledVector(right, speed * dt);
+  if (keys.has('space')) camera.position.y += speed * 0.55 * dt;
+  if (keys.has('shift')) camera.position.y -= speed * 0.55 * dt;
   // vr thumbstick (any connected gamepad)
   for (const c of controllers) {
     const gp = c.gamepad;
@@ -605,7 +609,8 @@ function stepCamera(dt) {
   camera.position.x = clamp(camera.position.x + move.x, ROOM_MIN.x + 1.2, ROOM_MAX.x - 1.2);
   const z = camera.position.z + move.z;
   camera.position.z = clamp(z, ROOM_MIN.z + 1.2, ROOM_MAX.z - 1.2);
-  camera.position.y = EYE;
+  // height is free-flight on desktop (headset supplies its own height in VR)
+  if (!renderer.xr.isPresenting) camera.position.y = clamp(camera.position.y, 1.0, 29);
   updateLookAtFromCamera();
 }
 
@@ -692,7 +697,7 @@ function onSessionStart() {
   hint.classList.add('hidden');
   // place the visitor in front of the table
   camera.position.set(0, EYE, 6);
-  _lookTarget.set(0, 12, WALL_Z);
+  _lookTarget.set(0, 13, WALL_Z);
   camera.lookAt(_lookTarget);
   setNodeLOD(true);
 }
@@ -846,7 +851,7 @@ window.addEventListener('blur', () => keys.clear());
 loadingEl.classList.add('hidden');
 setTimeout(() => loadingEl.remove(), 900);
 document.getElementById('sub').textContent =
-  `${ELEMENTS.length} atoms · ${ELEMENT_CATEGORIES.length} families · walk · WebXR`;
+  `${ELEMENTS.length} atoms · ${ELEMENT_CATEGORIES.length} families · free flight · WebXR`;
 
 setupXR();
 infoCard = buildInfoCard();
@@ -861,5 +866,9 @@ window.RPRoom = {
     return elementNodeList.reduce((a, n) => a + n.atom.children.length, 0);
   },
   selected: () => (currentNode ? currentNode.el.n : null),
+  matchedCount: () => elementNodeList.filter((n) => n.g.visible).length,
+  camPos: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z }),
+  cameraIdle: () => !tween && !locked,
+  grid: () => ({ colW: COL_W, rowH: ROW_H }),
   selectByNumber(n) { const node = elementNodes.get(n); if (node) focusElement(node); return !!node; },
 };

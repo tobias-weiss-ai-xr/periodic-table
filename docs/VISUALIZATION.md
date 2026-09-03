@@ -51,4 +51,8 @@ Interactive three.js + WebXR page, served from `/docs` on GitHub Pages.
 ## Verification
 
 `window.RPRoom` exposes a handful of hooks used for headless checks:
-`{ elements, nodes, shellsDrawn(), selected(), selectByNumber(n) }`.
+`{ elements, nodes, shellsDrawn(), selected(), matchedCount(), camPos(),
+selectByNumber(n) }`.
+`tools/headless_check.mjs` drives headless Chrome over CDP (no puppeteer):
+asserts 118 nodes build, selects an element, checks the detail panel content
+and reports any console errors (`node tools/headless_check.mjs <url>`).

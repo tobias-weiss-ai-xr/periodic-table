@@ -8,7 +8,7 @@ Live page: **https://tobias-weiss-ai-xr.github.io/periodic-table/** (GitHub Page
 
 ## What you can do
 
-- **Walk** the room (`click` to look around, `WASD`/arrow keys to move, `Shift` to sprint, `Esc` to release the mouse)
+- **Fly** the room (`click` to look around, `WASD`/arrow keys to move, `Space`/`Shift` up and down, `Ctrl` to sprint, `Esc` to release the mouse); in VR the headset sets your height and the left thumbstick walks
 - **Click any atom** — the camera glides to it, a detail panel opens (name, symbol, atomic mass, electron shells & configuration, phase, melt/boil points, density, electronegativity, summary), and a **holographic info card floats in front of the element** — readable both on screen *and inside the VR headset*.
 - **Search** for an element by name, symbol or number (Enter flies to the best match)
 - **Filter by family** via the colour chips (alkali metal, transition metal, lanthanide, …)

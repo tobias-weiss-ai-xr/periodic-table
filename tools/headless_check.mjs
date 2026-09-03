@@ -24,13 +24,13 @@ const chrome = spawn(CHROME, [
 
 let chromeErr = ''; chrome.stderr.on('data', (d) => { chromeErr += d; });
 
-async function waitFor(fn, ms = 20000) {
+async function waitFor(fn, ms = 20000, label = 'waitFor') {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
-    try { const v = await fn(); if (v) return v; } catch { /* retry */ }
+    try { const v = await fn(); if (v) return v; } catch (e) { /* retry */ }
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error('timeout waiting for condition');
+  throw new Error('timeout waiting for condition: ' + label);
 }
 
 let targetUrl = '';
@@ -151,6 +151,50 @@ async function main() {
   results.hydrogen = await evalExpr(`window.RPRoom.selectByNumber(1)`);
   results.oganesson = await evalExpr(`window.RPRoom.selectByNumber(118)`);
 
+  // --- interaction suite (after last camera tween settled) ---
+  await waitFor(async () => (await evalExpr('window.RPRoom.cameraIdle()')) === true, 30000, 'camera idle');
+
+  // search: type "Fe" → iron + fermium visible; clear → all back
+  results.search = await evalExpr(`(() => {
+    const el = document.querySelector('#search-input');
+    el.value = 'Fe';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    const after = window.RPRoom.matchedCount();
+    const miss = el.classList.contains('miss');
+    el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return { matches: after, miss, restored: window.RPRoom.matchedCount() };
+  })()`);
+
+  // movement: free flight — W moves forward (z decreases), Space gains height
+  const p0 = await evalExpr('window.RPRoom.camPos()');
+  await evalExpr(`document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true }))`);
+  await waitFor(async () => {
+    const p = await evalExpr('window.RPRoom.camPos()');
+    return p.z < p0.z - 0.4;
+  }, 15000, 'W forward');
+  const p1 = await evalExpr('window.RPRoom.camPos()');
+  await evalExpr(`document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }))`);
+  await evalExpr(`document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }))`);
+  await waitFor(async () => {
+    const p = await evalExpr('window.RPRoom.camPos()');
+    return p.y > p1.y + 0.3;
+  }, 15000, 'Space up');
+  const p2 = await evalExpr('window.RPRoom.camPos()');
+  await evalExpr(`document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', bubbles: true }))`);
+  results.movement = {
+    start: p0, afterW: p1, afterSpace: p2,
+    movedForward: p1.z < p0.z - 0.4,
+    gainedHeight: p2.y > p1.y + 0.3,
+  };
+
+  // grid spacing of the element cards
+  results.grid = await evalExpr('window.RPRoom.grid()');
+  results.xrButton = await evalExpr(`(() => {
+    const b = document.getElementById('xr');
+    return { text: b.textContent, hidden: b.classList.contains('hidden'), disabled: b.disabled };
+  })()`);
+
   // wait a bit more and re-check for errors that arise during animation
   await evalExpr('new Promise(r => setTimeout(r, 1200))');
   results.finalSelected = await evalExpr('window.RPRoom.selected()');
@@ -167,7 +211,12 @@ async function main() {
     && results.panel?.visible === true
     && results.panel?.hasIron && results.panel?.hasFe
     && results.boot?.loadingGone === true
-    && results.boot?.chips >= 7;
+    && results.boot?.chips >= 7
+    && results.grid?.colW === 3.4 && results.grid?.rowH === 3.2
+    && results.search?.matches === 2 && results.search?.restored === 118
+    && results.movement?.movedForward === true
+    && results.movement?.gainedHeight === true
+    && results.xrButton?.text.length > 0;
   console.log(pass ? 'PASS' : 'FAIL');
   return pass ? 0 : 1;
 }
