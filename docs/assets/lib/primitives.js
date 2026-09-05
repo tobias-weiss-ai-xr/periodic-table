@@ -232,7 +232,7 @@ function hexRing(r, y, phaseDeg, out, startIdx) {
 function latticePoints(type) {
   const pts = [];
   const bonds = [];
-  const cubeFace = (i) => pts.push(CUBE[i]);
+  const cubeFace = (p) => pts.push(p);
   switch (type) {
     case 'atom':
       pts.push([0, 0, 0]);
